@@ -1,6 +1,6 @@
 # valet-cursor
 
-`inference@1` agent provider `cursor`, built on the Cursor TypeScript SDK (`@cursor/sdk`).
+`inference@1` agent provider `cursor`, built on the Cursor TypeScript SDK (`@cursor/sdk`). It names the `cursor` logo (`icon`), so valet-ui shows the Cursor mark behind another lab's model mark.
 
 A [valet](https://github.com/valethq/valet-core) plugin and a sibling of `valet-claudecode`: Cursor's local agent runs the loop and its own tools in-process, and valet mirrors the stream into messages and parts. Nothing is spawned and no JSON is parsed; turns go through `Agent.create` / `Agent.resume` and `agent.send(..., { onDelta })`.
 

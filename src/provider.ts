@@ -35,10 +35,12 @@ export function createProvider(
       },
       (e) => !isNotFound(e),
     );
-  const provider: AgentProvider = {
+  // `& { icon }` until @valethq/sdk 0.3.0 (ProviderBase.icon) is published.
+  const provider: AgentProvider & { readonly icon: string } = {
     kind: "agent",
     id: PROVIDER_KEY,
     label: "Cursor",
+    icon: "cursor",
     listModels: modelLister(
       () => ctx.config,
       catalog,

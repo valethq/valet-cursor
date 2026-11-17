@@ -395,3 +395,8 @@ test("text helper joins deltas", async () => {
   const { deps } = fakeSdk(() => say("pong"));
   expect(texts(await collect((await open(fakeCtx({}, deps))).prompt(input("ping"), ac())))).toBe("pong");
 });
+
+test("the provider names the Cursor logo for UIs", () => {
+  const h = fakeCtx({}, fakeSdk(() => say("ok")).deps);
+  expect((h.provider as { icon?: string }).icon).toBe("cursor");
+});
