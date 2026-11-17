@@ -1,10 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { AgentProvider, AgentSession, PluginContext } from "@valethq/sdk";
 import type { CursorConfig } from "./config";
-import { type Catalog, modelLister } from "./models";
+import { type Catalog, modelLister, selectModel } from "./models";
 import { isNotFound, realSdk, type SdkDeps } from "./sdk";
 import { CursorSession } from "./session";
-import { apiKey, autoReview, customModels, hideBuiltinTools, mode, sandbox, secretName } from "./settings";
+import {
+  apiKey,
+  autoReview,
+  customModels,
+  hideBuiltinTools,
+  mode,
+  preferences,
+  sandbox,
+  secretName,
+} from "./settings";
 import { createUtility } from "./utility";
 
 export const PROVIDER_KEY = "cursor";
@@ -15,6 +24,8 @@ export function createProvider(
   deps: SdkDeps = realSdk,
 ): { provider: AgentProvider; dispose(): Promise<void> } {
   const sessions = new Set<CursorSession>();
+  const select = async (id: string) =>
+    selectModel(id, await catalog.get(), ctx.config?.models, preferences(ctx));
   /** Whether Cursor's local store still has the agent. Only a definite "not found" reseeds. */
   const known = (id: string, cwd: string) =>
     deps.resume(id, { local: { cwd } }).then(
@@ -32,8 +43,9 @@ export function createProvider(
       () => ctx.config,
       catalog,
       () => customModels(ctx),
+      () => preferences(ctx),
     ),
-    utility: createUtility(ctx, deps),
+    utility: createUtility(ctx, deps, select),
     async open(opts): Promise<AgentSession> {
       const session = ctx.store.sessions.get(opts.sessionId);
       const project = session && ctx.store.projects.get(session.projectId);
@@ -58,6 +70,7 @@ export function createProvider(
         }),
         mode: () => mode(ctx),
         apiKey: () => apiKey(ctx),
+        select,
         missingKey: `no Cursor API key: put one in ~/.valet/secrets/${secretName(ctx)} or ${secretName(ctx).toUpperCase()}`,
         log: ctx.log,
         readBlob: (blobId) => Bun.file(ctx.store.blobs.path(blobId)).bytes(),

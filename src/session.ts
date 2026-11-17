@@ -1,6 +1,7 @@
 import type {
   AgentOptions,
   InteractionUpdate,
+  ModelSelection,
   Run,
   RunResult,
   SDKAgent,
@@ -11,7 +12,6 @@ import type { AgentEvent, AgentSession, Logger, ModelContent, ToolSurface } from
 import { EventQueue } from "./channel";
 import { type CursorConfig, DEFAULT_IDLE_CLOSE_MS, type Mode } from "./config";
 import { closeOpen, mapUpdate, newTurnState, type ToolInfo, type TurnState, toolInfo } from "./events";
-import { resolveModel } from "./models";
 import type { SdkDeps } from "./sdk";
 import { customTools } from "./tools";
 
@@ -36,6 +36,8 @@ export interface SessionInit {
   flags(): SessionFlags;
   mode(): Mode;
   apiKey(): Promise<string | undefined>;
+  /** Picker id -> the model and params Cursor runs, read at each send so settings apply without a restart. */
+  select(pickerId: string): Promise<ModelSelection>;
   /** Shown when there is no key and no `Cursor.auth.login()` credential, instead of the SDK's slow auth retries. */
   missingKey: string;
   log: Logger;
@@ -81,7 +83,7 @@ export class CursorSession implements AgentSession {
     const tools = toolSet(cfg, flags);
     return {
       ...(key && { apiKey: key }),
-      model: resolveModel(this.model),
+      model: await this.init.select(this.model),
       local: {
         cwd: this.init.cwd,
         settingSources: cfg.settingSources ?? [],
@@ -219,7 +221,7 @@ export class CursorSession implements AgentSession {
     try {
       try {
         run = await agent.send(message, {
-          model: resolveModel(this.model),
+          model: await this.init.select(this.model),
           mode: this.init.mode(),
           onDelta,
           local: {

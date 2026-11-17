@@ -1,12 +1,16 @@
 import { tmpdir } from "node:os";
+import type { ModelSelection } from "@cursor/sdk";
 import type { PluginContext, UtilityModel } from "@valethq/sdk";
 import type { CursorConfig } from "./config";
-import { resolveModel } from "./models";
 import type { SdkDeps } from "./sdk";
 import { apiKey, utilityModel } from "./settings";
 
 /** Side jobs are one tool-free run in a throwaway agent, outside any project. */
-export function createUtility(ctx: PluginContext<CursorConfig>, deps: SdkDeps): UtilityModel {
+export function createUtility(
+  ctx: PluginContext<CursorConfig>,
+  deps: SdkDeps,
+  select: (pickerId: string) => Promise<ModelSelection>,
+): UtilityModel {
   return {
     model: () => utilityModel(ctx),
     async complete(req, signal) {
@@ -17,7 +21,7 @@ export function createUtility(ctx: PluginContext<CursorConfig>, deps: SdkDeps): 
         throw new Error("no Cursor API key for the utility model");
       const agent = await deps.create({
         ...(key && { apiKey: key }),
-        model: resolveModel(picked),
+        model: await select(picked),
         tools: [],
         local: { cwd: tmpdir(), settingSources: [] },
       });

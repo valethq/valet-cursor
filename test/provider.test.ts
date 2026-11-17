@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { InteractionUpdate } from "@cursor/sdk";
 import type { AgentEvent, AgentSession, ToolSurface } from "@valethq/sdk";
+import { CATALOG } from "./catalog";
 import { fakeSdk, notFound, say, usage } from "./fake-sdk";
 import { collect, fakeCtx, input, noTools, open, texts } from "./helpers";
 
@@ -121,6 +122,22 @@ describe("turns", () => {
     await s.setModel?.("gpt-5.5?reasoning=high");
     await collect(s.prompt(input("hi"), ac()));
     expect(sends[0]?.options.model).toEqual({ id: "gpt-5.5", params: [{ id: "reasoning", value: "high" }] });
+  });
+
+  test("picker efforts map onto the catalog model's effort param", async () => {
+    const { deps, agents, sends } = fakeSdk(() => say("ok"), { models: async () => CATALOG });
+    const s = await open(fakeCtx({}, deps), { model: "claude-sonnet-5-max" });
+    await s.setModel?.("gpt-5.5-xhigh");
+    await collect(s.prompt(input("hi"), ac()));
+    expect(agents[0]?.options.model).toEqual({
+      id: "gpt-5.5",
+      params: [
+        { id: "context", value: "272k" },
+        { id: "reasoning", value: "extra-high" },
+        { id: "fast", value: "false" },
+      ],
+    });
+    expect(sends[0]?.options.model).toEqual(agents[0]?.options.model as never);
   });
 
   test("images are sent inline", async () => {

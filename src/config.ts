@@ -4,14 +4,18 @@ export type Mode = "agent" | "plan";
 export const MODES: readonly Mode[] = ["agent", "plan"];
 
 export interface ModelConfig {
-  /** Picker id: a Cursor model id, optionally with variant params as "<id>?<param>=<value>&...". */
+  /** Cursor model id. */
   id: string;
   name?: string;
   contextWindow?: number;
   maxOutputTokens?: number;
+  /** Effort values offered as picker entries "<id>-<effort>". Mapped through Cursor's catalog when it has the model. */
+  efforts?: string[];
+  /** Cursor param the effort is sent as when the catalog doesn't know the model. Default "effort". */
+  effortParam?: string;
 }
 
-/** A model the user adds by hand; `id` goes to Cursor unchanged (params included), `name` is the picker label. */
+/** A model the user adds by hand; `id` is a picker id ("<id>" or "<id>-<effort>"), `name` is the picker label. */
 export interface CustomModel {
   id: string;
   name?: string;
@@ -36,6 +40,12 @@ export interface CursorConfig {
   settingSources?: SettingSource[];
   /** Close an idle agent after this long; the next prompt resumes it. 0 disables. Default 15 min. */
   idleCloseMs?: number;
+  /** Cursor fast mode where a model has it. Also in the settings panel. Default false. */
+  fast?: boolean;
+  /** Allow Max-mode variants (the large context windows, billed higher). Also in the settings panel. Default false. */
+  maxMode?: boolean;
+  /** Per-model Cursor params that win over the picker and the settings, e.g. { "claude-opus-4-8": { "thinking": "false" } }. */
+  modelParams?: Record<string, Record<string, string>>;
   /** Model for small side jobs such as session naming. Empty string turns them off. */
   utilityModel?: string;
   /** Replaces the model list. Unset: Cursor's catalog when a key is available, else the built-in list. */

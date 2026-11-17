@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SettingsBlock } from "@valethq/sdk";
+import { CATALOG } from "./catalog";
 import { fakeSdk, say } from "./fake-sdk";
 import { collect, fakeCtx, input, open } from "./helpers";
 
@@ -22,6 +23,8 @@ test("panel values override config and apply to the next prompt", async () => {
     hideBuiltinTools: false,
     autoReview: true,
     sandbox: false,
+    fast: false,
+    maxMode: false,
   });
   await panel.set?.({
     mode: "agent",
@@ -48,6 +51,7 @@ test("set rejects bad values", async () => {
   const panel = fakeCtx({}, fakeSdk(() => say("x")).deps).panel();
   expect(() => panel.set?.({ mode: "yolo" })).toThrow("mode must be one of");
   expect(() => panel.set?.({ sandbox: "yes" })).toThrow("sandbox must be true or false");
+  expect(() => panel.set?.({ maxMode: 1 })).toThrow("maxMode must be true or false");
   expect(() => panel.set?.({ customModels: [{ name: "no id" }] })).toThrow("need a model id");
   expect(() => panel.set?.({ utilityModel: 3 })).toThrow("utilityModel must be a string");
 });
@@ -86,4 +90,25 @@ test("the utility model runs one tool-free send and returns its text", async () 
   await h.panel().set?.({ utilityModel: "" });
   expect(h.provider.utility?.model()).toBeUndefined();
   expect(h.provider.utility?.complete({ system: "", prompt: "" }, ac())).rejects.toThrow("no utility model");
+});
+
+test("fast and Max mode from the panel change the picked variant and the advertised window", async () => {
+  const { deps, sends } = fakeSdk(() => say("ok"), { models: async () => CATALOG });
+  const h = fakeCtx({ modelParams: { "claude-sonnet-5": { thinking: "false" } } }, deps);
+  const window = async () =>
+    (await h.provider.listModels()).find((m) => m.id === "claude-sonnet-5-high")?.contextWindow;
+  expect(await window()).toBe(300_000);
+  await h.panel().set?.({ maxMode: true, fast: true });
+  h.panel().actions?.reloadModels?.({});
+  expect(await window()).toBe(1_000_000);
+  const s = await open(h, { model: "claude-sonnet-5-high" });
+  await collect(s.prompt(input("hi"), ac()));
+  expect(sends[0]?.options.model).toEqual({
+    id: "claude-sonnet-5",
+    params: [
+      { id: "thinking", value: "false" },
+      { id: "context", value: "1m" },
+      { id: "effort", value: "high" },
+    ],
+  });
 });

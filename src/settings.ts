@@ -7,12 +7,12 @@ import {
   MODES,
   type Mode,
 } from "./config";
-import type { Catalog } from "./models";
+import type { Catalog, Preferences } from "./models";
 import type { SdkDeps } from "./sdk";
 
 type Ctx = PluginContext<CursorConfig>;
 
-const FLAGS = ["hideBuiltinTools", "autoReview", "sandbox"] as const;
+const FLAGS = ["hideBuiltinTools", "autoReview", "sandbox", "fast", "maxMode"] as const;
 const KEYS = ["mode", "utilityModel", "customModels", ...FLAGS] as const;
 
 export const secretName = (ctx: Ctx): string => ctx.config?.secret?.trim() || DEFAULT_SECRET;
@@ -45,6 +45,19 @@ export const autoReview = (ctx: Ctx): boolean | undefined =>
 /** Panel value wins over config.json. Undefined leaves the SDK default. */
 export const sandbox = (ctx: Ctx): boolean | undefined =>
   ctx.storage.kv.get<boolean>("sandbox") ?? ctx.config?.sandbox;
+
+/** Panel value wins over config.json. Default false: Cursor's standard speed. */
+export const fast = (ctx: Ctx): boolean => ctx.storage.kv.get<boolean>("fast") ?? ctx.config?.fast ?? false;
+
+/** Panel value wins over config.json. Default false: no Max-mode variants, so the standard context window. */
+export const maxMode = (ctx: Ctx): boolean =>
+  ctx.storage.kv.get<boolean>("maxMode") ?? ctx.config?.maxMode ?? false;
+
+export const preferences = (ctx: Ctx): Preferences => ({
+  fast: fast(ctx),
+  maxMode: maxMode(ctx),
+  overrides: (id) => ctx.config?.modelParams?.[id] ?? {},
+});
 
 const isCustomModel = (m: unknown): m is CustomModel =>
   typeof m === "object" &&
@@ -124,7 +137,7 @@ export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): voi
           customModels: {
             type: "array",
             title: "Custom models",
-            description: 'Extra models for the picker. Sent to Cursor as is; add params as "id?param=value".',
+            description: 'Extra models for the picker: a Cursor model id, or "<id>-<effort>" for one effort.',
             items: {
               type: "object",
               required: ["id"],
@@ -133,6 +146,16 @@ export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): voi
                 name: { type: "string", title: "Friendly name" },
               },
             },
+          },
+          fast: {
+            type: "boolean",
+            title: "Fast mode",
+            description: "Use Cursor's fast variant on models that have one.",
+          },
+          maxMode: {
+            type: "boolean",
+            title: "Max mode",
+            description: "Allow Max-mode variants: the largest context windows, billed at Max-mode rates.",
           },
           hideBuiltinTools: {
             type: "boolean",
@@ -159,6 +182,8 @@ export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): voi
         hideBuiltinTools: hideBuiltinTools(ctx),
         autoReview: autoReview(ctx) ?? false,
         sandbox: sandbox(ctx) ?? false,
+        fast: fast(ctx),
+        maxMode: maxMode(ctx),
       }),
       set: (v) => {
         if (
