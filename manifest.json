@@ -24,6 +24,7 @@
       },
       "fast": { "type": "boolean" },
       "maxMode": { "type": "boolean" },
+      "hideAuto": { "type": "boolean" },
       "modelParams": {
         "type": "object",
         "additionalProperties": { "type": "object", "additionalProperties": { "type": "string" } }

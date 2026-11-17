@@ -55,6 +55,8 @@ Cursor's catalog lists every combination of a model's params as a variant (Claud
 - The other params come from the settings, not the picker: `fast` (default off) and `maxMode` (default off, which keeps the standard context window, e.g. 300k instead of 1M on Claude). `thinking` keeps the catalog default. `modelParams` pins any param per model and wins over both.
 - The plugin sends the params of the closest real catalog variant, so a combination Cursor doesn't offer is never sent. The advertised `contextWindow` is that variant's context.
 
+`hideAuto` (panel toggle "Hide Auto", default off) leaves Cursor's Auto model (`default`) out of the catalog list. It only hides the row: a session or stored id already on `default` keeps running on Auto, and `default` added by hand to `models` or the custom models is still listed.
+
 `id?param=value` ids from 0.1.0 still work and are sent as written. Custom models from the panel are appended; `<id>-<effort>` works there for catalog models. Config `models` entries can list `efforts`, mapped through the catalog, or sent as `effortParam` (default `effort`) for a model the catalog doesn't know.
 
 The Utility model (default `composer-2`) runs one tool-free send in a throwaway agent under the temp dir.
@@ -75,6 +77,7 @@ The Utility model (default `composer-2`) runs one tool-free send in a throwaway 
 | `utilityModel`     | Default `composer-2`; `""` turns side jobs off. Also in the settings panel.                                  |
 | `fast`             | Default `false`. Cursor fast mode where a model has it. Also in the settings panel.                          |
 | `maxMode`          | Default `false`. Allow Max-mode variants (large context windows). Also in the settings panel.                |
+| `hideAuto`         | Default `false`. Leave Cursor's Auto model (`default`) out of the picker. Also in the settings panel.        |
 | `modelParams`      | Per-model Cursor params, e.g. `{ "claude-opus-4-8": { "thinking": "false" } }`. Wins over picker and panel.  |
 | `models`           | Replace the model list (`id`, `name?`, `contextWindow?`, `maxOutputTokens?`, `efforts?`, `effortParam?`).    |
 | `customModels`     | Extra picker entries (`id`, `name?`). Also in the settings panel.                                            |

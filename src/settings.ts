@@ -12,7 +12,7 @@ import type { SdkDeps } from "./sdk";
 
 type Ctx = PluginContext<CursorConfig>;
 
-const FLAGS = ["hideBuiltinTools", "autoReview", "sandbox", "fast", "maxMode"] as const;
+const FLAGS = ["hideBuiltinTools", "autoReview", "sandbox", "fast", "maxMode", "hideAuto"] as const;
 const KEYS = ["mode", "utilityModel", "customModels", ...FLAGS] as const;
 
 export const secretName = (ctx: Ctx): string => ctx.config?.secret?.trim() || DEFAULT_SECRET;
@@ -53,9 +53,14 @@ export const fast = (ctx: Ctx): boolean => ctx.storage.kv.get<boolean>("fast") ?
 export const maxMode = (ctx: Ctx): boolean =>
   ctx.storage.kv.get<boolean>("maxMode") ?? ctx.config?.maxMode ?? false;
 
+/** Panel value wins over config.json. Default false: Auto is listed. */
+export const hideAuto = (ctx: Ctx): boolean =>
+  ctx.storage.kv.get<boolean>("hideAuto") ?? ctx.config?.hideAuto ?? false;
+
 export const preferences = (ctx: Ctx): Preferences => ({
   fast: fast(ctx),
   maxMode: maxMode(ctx),
+  hideAuto: hideAuto(ctx),
   overrides: (id) => ctx.config?.modelParams?.[id] ?? {},
 });
 
@@ -157,6 +162,12 @@ export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): voi
             title: "Max mode",
             description: "Allow Max-mode variants: the largest context windows, billed at Max-mode rates.",
           },
+          hideAuto: {
+            type: "boolean",
+            title: "Hide Auto",
+            description:
+              "Leave Cursor's Auto model out of the picker. Sessions already on Auto keep using it.",
+          },
           hideBuiltinTools: {
             type: "boolean",
             title: "Hide built-in tools",
@@ -184,6 +195,7 @@ export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): voi
         sandbox: sandbox(ctx) ?? false,
         fast: fast(ctx),
         maxMode: maxMode(ctx),
+        hideAuto: hideAuto(ctx),
       }),
       set: (v) => {
         if (

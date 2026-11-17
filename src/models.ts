@@ -26,11 +26,21 @@ export interface Preferences {
   fast: boolean;
   /** Allow Max-mode variants, which carry the large context windows. */
   maxMode: boolean;
+  /** Leave Cursor's Auto model out of the catalog list. It still runs when a session names it. */
+  hideAuto: boolean;
   /** Per-model param values that win over everything else, e.g. { thinking: "false" }. */
   overrides(modelId: string): Record<string, string>;
 }
 
-export const DEFAULT_PREFERENCES: Preferences = { fast: false, maxMode: false, overrides: () => ({}) };
+export const DEFAULT_PREFERENCES: Preferences = {
+  fast: false,
+  maxMode: false,
+  hideAuto: false,
+  overrides: () => ({}),
+};
+
+/** Cursor's Auto model, which picks a model per request. */
+export const AUTO_MODEL = "default";
 
 export function effortParam(item: ModelListItem): ModelParameterDefinition | undefined {
   for (const id of EFFORT_PARAMS) {
@@ -203,7 +213,9 @@ export function modelLister(
     const items = configured ? undefined : await catalog.get();
     const listed = (
       configured?.flatMap(configEntries) ??
-      items?.flatMap((i) => catalogEntries(i, prefs())) ??
+      items
+        ?.filter((i) => !(prefs().hideAuto && i.id === AUTO_MODEL))
+        .flatMap((i) => catalogEntries(i, prefs())) ??
       DEFAULT_MODELS
     ).map(toModelInfo);
     const seen = new Set(listed.map((m) => m.id));

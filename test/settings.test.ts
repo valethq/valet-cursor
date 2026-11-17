@@ -25,6 +25,7 @@ test("panel values override config and apply to the next prompt", async () => {
     sandbox: false,
     fast: false,
     maxMode: false,
+    hideAuto: false,
   });
   await panel.set?.({
     mode: "agent",
@@ -111,4 +112,27 @@ test("fast and Max mode from the panel change the picked variant and the adverti
       { id: "effort", value: "high" },
     ],
   });
+});
+
+test("hideAuto drops Auto from the picker, but a session on it still runs", async () => {
+  const { deps, sends } = fakeSdk(() => say("ok"), { models: async () => CATALOG });
+  const h = fakeCtx({}, deps);
+  const ids = async () => (await h.provider.listModels()).map((m) => m.id);
+  expect(await ids()).toContain("default");
+  await h.panel().set?.({ hideAuto: true });
+  expect(await ids()).not.toContain("default");
+  expect(await ids()).toContain("composer-2.5");
+  const s = await open(h, { model: "default" });
+  expect((await collect(s.prompt(input("hi"), ac()))).at(-1)).toEqual({ type: "finish", reason: "stop" });
+  expect(sends[0]?.options.model).toEqual({ id: "default" });
+  await h.panel().set?.({ customModels: [{ id: "default", name: "Auto" }] });
+  expect(await ids()).toContain("default");
+  expect(() => h.panel().set?.({ hideAuto: "yes" })).toThrow("hideAuto must be true or false");
+});
+
+test("hideAuto from config.json, and the panel overrides it", async () => {
+  const h = fakeCtx({ hideAuto: true }, fakeSdk(() => say("ok"), { models: async () => CATALOG }).deps);
+  expect((await h.provider.listModels()).map((m) => m.id)).not.toContain("default");
+  await h.panel().set?.({ hideAuto: false });
+  expect((await h.provider.listModels()).map((m) => m.id)).toContain("default");
 });

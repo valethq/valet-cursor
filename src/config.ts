@@ -44,6 +44,8 @@ export interface CursorConfig {
   fast?: boolean;
   /** Allow Max-mode variants (the large context windows, billed higher). Also in the settings panel. Default false. */
   maxMode?: boolean;
+  /** Leave Cursor's Auto model (`default`) out of the picker; sessions already on it keep running. Also in the settings panel. Default false. */
+  hideAuto?: boolean;
   /** Per-model Cursor params that win over the picker and the settings, e.g. { "claude-opus-4-8": { "thinking": "false" } }. */
   modelParams?: Record<string, Record<string, string>>;
   /** Model for small side jobs such as session naming. Empty string turns them off. */
