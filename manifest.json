@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "id": "valet-cursor",
+  "name": "Cursor",
+  "version": "0.1.0",
+  "description": "inference@1 agent provider cursor over the Cursor SDK.",
+  "valet": "^0.1.0",
+  "main": "./src/index.ts",
+  "provides": ["inference@1", "settings@1"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "secret": { "type": "string" },
+      "mode": { "type": "string", "enum": ["agent", "plan"] },
+      "denyTools": { "type": "array", "items": { "type": "string" } },
+      "tools": { "type": "array", "items": { "type": "string" } },
+      "hideBuiltinTools": { "type": "boolean" },
+      "autoReview": { "type": "boolean" },
+      "sandbox": { "type": "boolean" },
+      "settingSources": {
+        "type": "array",
+        "items": { "type": "string", "enum": ["project", "user", "team", "mdm", "plugins", "all"] }
+      },
+      "idleCloseMs": { "type": "number" },
+      "utilityModel": { "type": "string" },
+      "customModels": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
+        }
+      },
+      "models": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "contextWindow": { "type": "number" },
+            "maxOutputTokens": { "type": "number" }
+          }
+        }
+      }
+    }
+  }
+}
