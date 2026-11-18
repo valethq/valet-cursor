@@ -1,7 +1,8 @@
 import { tmpdir } from "node:os";
 import type { ModelSelection } from "@cursor/sdk";
-import type { PluginContext, UtilityModel } from "@valethq/sdk";
+import type { ModelOptions, PluginContext, UtilityModel } from "@valethq/sdk";
 import type { CursorConfig } from "./config";
+import { resolveModel } from "./models";
 import type { SdkDeps } from "./sdk";
 import { apiKey, utilityModel } from "./settings";
 
@@ -9,19 +10,20 @@ import { apiKey, utilityModel } from "./settings";
 export function createUtility(
   ctx: PluginContext<CursorConfig>,
   deps: SdkDeps,
-  select: (pickerId: string) => Promise<ModelSelection>,
+  select: (modelId: string, options: ModelOptions) => Promise<ModelSelection>,
 ): UtilityModel {
   return {
     model: () => utilityModel(ctx),
     async complete(req, signal) {
       const picked = utilityModel(ctx);
       if (!picked) throw new Error("no utility model is configured");
+      const { model, effort } = resolveModel(picked);
       const key = await apiKey(ctx);
       if (!key && (await deps.authStatus().catch(() => undefined))?.status !== "logged-in")
         throw new Error("no Cursor API key for the utility model");
       const agent = await deps.create({
         ...(key && { apiKey: key }),
-        model: await select(picked),
+        model: await select(model, effort ? { effort } : {}),
         tools: [],
         local: { cwd: tmpdir(), settingSources: [] },
       });

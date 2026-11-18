@@ -16,13 +16,17 @@ export function fakeCtx(
   const logs: { level: string; msg: string; data?: Record<string, unknown> }[] = [];
   const logger = (level: string) => (msg: string, data?: Record<string, unknown>) =>
     logs.push({ level, msg, data });
+  let current = config;
   const ctx = {
-    config,
+    get config() {
+      return current;
+    },
     plugin: { id: "valet-cursor", version: "0.1.0" },
     log: { debug: logger("debug"), info: logger("info"), warn: logger("warn"), error: logger("error") },
     secrets: {
       get: async (name: string) => (opts.secrets ?? { cursor_api_key: "test-key" })[name],
     },
+    onConfigChange: () => undefined,
     scopes: {
       define: () => undefined,
       provide: (scope: string, value: unknown) => {
@@ -61,6 +65,10 @@ export function fakeCtx(
   );
   const { provider, dispose } = createProvider(ctx, catalog, deps);
   registerSettings(ctx, deps, catalog);
+  /** What core does on a settings save: the new block replaces ctx.config. */
+  const setConfig = (patch: Partial<CursorConfig>) => {
+    current = { ...current, ...patch };
+  };
   return {
     provider: provider as AgentProvider,
     state,
@@ -68,6 +76,7 @@ export function fakeCtx(
     kv,
     dispose,
     ctx,
+    setConfig,
     panel: () => panels[0] as SettingsPanel,
   };
 }

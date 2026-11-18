@@ -17,7 +17,7 @@ The API key is a valet secret, not a setting: `~/.valet/secrets/cursor_api_key`,
 - The first send after a resume passes `local.force`, which expires a run a crashed valet left active (otherwise Cursor answers `already has active run`).
 - The preamble is prepended to the first message: Cursor's `systemPrompt` replaces the whole harness prompt and is gated per account.
 - Idle agents are closed after `idleCloseMs` (default 15 min) and resumed by the next prompt.
-- `setModel` only changes the model the next send passes; Cursor applies it per send.
+- Effort and fast mode arrive as model options (`open({ effort, fast })`, `setModel(model, { effort, fast })`): the next send picks the closest real catalog variant for those options plus Max mode / `modelParams`. `listModels` lists each model once with its `efforts` and `fast`. Nothing is encoded in the model id.
 - Abort calls `run.cancel()`. Cursor drops a run cancelled before it saved a step, so when no model call or step had finished, the next prompt carries the cancelled text.
 - `compact()` runs `agent.summarize()`. It takes no instructions.
 
@@ -48,41 +48,43 @@ Calls still open when a run ends get a `tool-end` (`cancelled` or `error`). Suba
 
 `listModels` uses `config.models`, then Cursor's catalog (`Cursor.models.list()`, cached for 10 minutes, needs a key or login), then `composer-2.5` and `composer-2`.
 
-Cursor's catalog lists every combination of a model's params as a variant (Claude Opus 4.8 has 40, all with the same name), so the plugin does not list variants. Each catalog model is one family in valet's picker:
+Cursor's catalog lists every combination of a model's params as a variant (Claude Opus 4.8 has 40, all with the same name), so the plugin does not list variants. Each catalog model is one row in valet's picker:
 
-- A model with an effort param gets one row per effort, `<id>-<effort>` named `<Name> (<effort>)`, which valet's picker shows as one model with an Effort menu. The effort param is whichever of `effort`, `reasoning_effort` or `reasoning` the model has. Cursor's `extra-high` is shown as `xhigh`.
-- A model without one (Composer, Auto, Gemini Flash, ...) is a single row under its bare id. A bare id of a model with efforts runs the catalog's default effort.
-- The other params come from the settings, not the picker: `fast` (default off) and `maxMode` (default off, which keeps the standard context window, e.g. 300k instead of 1M on Claude). `thinking` keeps the catalog default. `modelParams` pins any param per model and wins over both.
-- The plugin sends the params of the closest real catalog variant, so a combination Cursor doesn't offer is never sent. The advertised `contextWindow` is that variant's context.
+- Efforts become `ModelInfo.efforts` (Cursor's `extra-high` is shown as `xhigh`), with `defaultEffort` from the catalog default.
+- A model with a `fast` param advertises `fast: true`, and `fastByDefault` when the catalog default is fast.
+- The selection's `ModelOptions.effort` / `ModelOptions.fast` pick the variant; unset effort runs the default, unset fast follows `fastByDefault`.
+- Max mode (`maxMode` config, default off) chooses Max-mode variants so the advertised and sent context windows are the large ones. `thinking` keeps the catalog default unless `modelParams` pins it.
+- The plugin sends the params of the closest real catalog variant, so a combination Cursor doesn't offer is never sent.
 
-`hideAuto` (panel toggle "Hide Auto", default off) leaves Cursor's Auto model (`default`) out of the catalog list. It only hides the row: a session or stored id already on `default` keeps running on Auto, and `default` added by hand to `models` or the custom models is still listed.
+`hideAuto` (default off) leaves Cursor's Auto model (`default`) out of the catalog list. It only hides the row: a session or stored id already on `default` keeps running on Auto, and `default` added by hand to `models` is still listed.
 
-`id?param=value` ids from 0.1.0 still work and are sent as written. Custom models from the panel are appended; `<id>-<effort>` works there for catalog models. Config `models` entries can list `efforts`, mapped through the catalog, or sent as `effortParam` (default `effort`) for a model the catalog doesn't know.
+Legacy `id?param=value` ids from 0.1.0 still work and are sent as written. Config `models` entries can list `efforts`, `defaultEffort`, `fast`, `fastByDefault`, and `effortParam` (default `effort`) for a model the catalog doesn't know.
 
-The Utility model (default `composer-2`) runs one tool-free send in a throwaway agent under the temp dir.
+The Utility model (default `composer-2`) runs one tool-free send in a throwaway agent under the temp dir; it may end in an effort (`composer-2-high`).
 
-## Config (`plugins.valet-cursor.config`)
+## Config
 
-| Key                | Meaning                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `secret`           | Secret name for the API key. Default `cursor_api_key` (`~/.valet/secrets/cursor_api_key`, `CURSOR_API_KEY`). |
-| `mode`             | `agent` (default) or `plan`. Also in the settings panel.                                                     |
-| `denyTools`        | Built-ins Cursor may never offer (`disallowedTools`), e.g. `["shell"]`.                                      |
-| `tools`            | Base set of built-ins. Unset keeps Cursor's defaults. `"mcp"` is added.                                      |
-| `hideBuiltinTools` | Default `false`. `true` offers only valet's tools. Also in the settings panel.                               |
-| `autoReview`       | Cursor's Auto-review for local tool calls. Unset keeps the SDK default. Also in the settings panel.          |
-| `sandbox`          | Cursor's local sandbox (`sandboxOptions.enabled`). Unset keeps the SDK default. Also in the settings panel.  |
-| `settingSources`   | Cursor settings layers to load. Default `[]`: valet supplies the persona and AGENTS.md.                      |
-| `idleCloseMs`      | Default 900000; `0` never closes.                                                                            |
-| `utilityModel`     | Default `composer-2`; `""` turns side jobs off. Also in the settings panel.                                  |
-| `fast`             | Default `false`. Cursor fast mode where a model has it. Also in the settings panel.                          |
-| `maxMode`          | Default `false`. Allow Max-mode variants (large context windows). Also in the settings panel.                |
-| `hideAuto`         | Default `false`. Leave Cursor's Auto model (`default`) out of the picker. Also in the settings panel.        |
-| `modelParams`      | Per-model Cursor params, e.g. `{ "claude-opus-4-8": { "thinking": "false" } }`. Wins over picker and panel.  |
-| `models`           | Replace the model list (`id`, `name?`, `contextWindow?`, `maxOutputTokens?`, `efforts?`, `effortParam?`).    |
-| `customModels`     | Extra picker entries (`id`, `name?`). Also in the settings panel.                                            |
+Settings are this plugin's config (valet-core 12.1): the UI edits them through core, and every value applies at the next prompt or agent start.
+(`plugins.valet-cursor.config`)
 
-Config and panel values are read when an agent starts or a prompt is sent, so changes apply without a valet restart.
+| Key                | Meaning                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `secret`           | Secret name for the API key. Default `cursor_api_key` (`~/.valet/secrets/cursor_api_key`, `CURSOR_API_KEY`).                                           |
+| `mode`             | `agent` (default) or `plan`.                                                                                                                           |
+| `denyTools`        | Built-ins Cursor may never offer (`disallowedTools`), e.g. `["shell"]`.                                                                                |
+| `tools`            | Base set of built-ins. Unset keeps Cursor's defaults. `"mcp"` is added.                                                                                |
+| `hideBuiltinTools` | Default `false`. `true` offers only valet's tools.                                                                                                     |
+| `autoReview`       | Cursor's Auto-review for local tool calls. Unset keeps the SDK default.                                                                                |
+| `sandbox`          | Cursor's local sandbox (`sandboxOptions.enabled`). Unset keeps the SDK default.                                                                        |
+| `settingSources`   | Cursor settings layers to load. Default `[]`: valet supplies the persona and AGENTS.md.                                                                |
+| `idleCloseMs`      | Default 900000; `0` never closes.                                                                                                                      |
+| `utilityModel`     | Default `composer-2`; `""` turns side jobs off. May end in an effort.                                                                                  |
+| `maxMode`          | Default `false`. Allow Max-mode variants (large context windows).                                                                                      |
+| `hideAuto`         | Default `false`. Leave Cursor's Auto model (`default`) out of the picker.                                                                              |
+| `modelParams`      | Per-model Cursor params, e.g. `{ "claude-opus-4-8": { "thinking": "false" } }`. Wins over the picker.                                                  |
+| `models`           | Replace the model list (`id`, `name?`, `contextWindow?`, `maxOutputTokens?`, `efforts?`, `defaultEffort?`, `effortParam?`, `fast?`, `fastByDefault?`). |
+
+The settings panel above the form shows whether an API key or Cursor login was found, and a "Reload models" action. Fast mode is not a plugin setting: it is chosen per model selection.
 
 ## Tests
 

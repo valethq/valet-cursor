@@ -4,11 +4,10 @@ import { EventQueue } from "../src/channel";
 import { DEFAULT_MODELS } from "../src/config";
 import { mapUpdate, newTurnState, toolInfo, toolOutcome } from "../src/events";
 import {
-  catalogEntries,
-  configEntries,
   contextTokens,
   createCatalog,
   DEFAULT_PREFERENCES,
+  fromCatalog,
   modelLister,
   selectModel,
 } from "../src/models";
@@ -18,49 +17,52 @@ import { CATALOG } from "./catalog";
 describe("models", () => {
   const sonnet = CATALOG[0] as ModelListItem;
   const gpt = CATALOG[1] as ModelListItem;
+  const composer = CATALOG[2] as ModelListItem;
   const param = (sel: { params?: { id: string; value: string }[] }, id: string) =>
     sel.params?.find((p) => p.id === id)?.value;
 
-  test("each catalog model is one family, with one row per effort", () => {
-    expect(catalogEntries(sonnet)).toEqual(
-      ["low", "medium", "high", "xhigh", "max"].map((e) => ({
-        id: `claude-sonnet-5-${e}`,
-        name: `Claude Sonnet 5 (${e})`,
-        contextWindow: 300_000,
-      })),
-    );
-    expect(catalogEntries(gpt).map((m) => m.id)).toEqual([
-      "gpt-5.5-none",
-      "gpt-5.5-low",
-      "gpt-5.5-medium",
-      "gpt-5.5-high",
-      "gpt-5.5-xhigh",
-    ]);
-    expect(catalogEntries(CATALOG[2] as ModelListItem)).toEqual([
-      { id: "composer-2.5", name: "Composer 2.5" },
-    ]);
-    expect(catalogEntries(sonnet, { ...DEFAULT_PREFERENCES, maxMode: true })[0]?.contextWindow).toBe(
-      1_000_000,
-    );
+  test("each catalog model is listed once with efforts and fast", () => {
+    expect(fromCatalog(sonnet)).toEqual({
+      id: "claude-sonnet-5",
+      name: "Claude Sonnet 5",
+      contextWindow: 300_000,
+      maxOutputTokens: 64_000,
+      input: ["text", "image"],
+      reasoning: true,
+      efforts: ["low", "medium", "high", "xhigh", "max"],
+      defaultEffort: "high",
+    });
+    expect(fromCatalog(gpt)).toMatchObject({
+      id: "gpt-5.5",
+      efforts: ["none", "low", "medium", "high", "xhigh"],
+      defaultEffort: "medium",
+      fast: true,
+      contextWindow: 272_000,
+    });
+    expect(fromCatalog(composer)).toMatchObject({
+      id: "composer-2.5",
+      fast: true,
+      fastByDefault: true,
+    });
+    expect(fromCatalog(sonnet, { ...DEFAULT_PREFERENCES, maxMode: true }).contextWindow).toBe(1_000_000);
   });
 
-  test("the effort picks Cursor's effort param; other params default to non-Max, non-fast", () => {
-    const s = selectModel("claude-sonnet-5-xhigh", CATALOG, undefined);
+  test("ModelOptions pick effort and fast; Max mode and overrides come from prefs", () => {
+    const s = selectModel("claude-sonnet-5", { effort: "xhigh" }, CATALOG, undefined);
     expect(s.id).toBe("claude-sonnet-5");
     expect([param(s, "effort"), param(s, "context"), param(s, "thinking")]).toEqual([
       "xhigh",
       "300k",
       "true",
     ]);
-    const g = selectModel("gpt-5.5-xhigh", CATALOG, undefined);
+    const g = selectModel("gpt-5.5", { effort: "xhigh" }, CATALOG, undefined);
     expect([param(g, "reasoning"), param(g, "context"), param(g, "fast")]).toEqual([
       "extra-high",
       "272k",
       "false",
     ]);
-    const fastMax = selectModel("gpt-5.5-low", CATALOG, undefined, {
+    const fastMax = selectModel("gpt-5.5", { effort: "low", fast: true }, CATALOG, undefined, {
       ...DEFAULT_PREFERENCES,
-      fast: true,
       maxMode: true,
     });
     expect([param(fastMax, "reasoning"), param(fastMax, "context"), param(fastMax, "fast")]).toEqual([
@@ -68,14 +70,15 @@ describe("models", () => {
       "1m",
       "true",
     ]);
-    expect(param(selectModel("composer-2.5", CATALOG, undefined), "fast")).toBe("false");
-    expect(selectModel("default", CATALOG, undefined)).toEqual({ id: "default" });
+    expect(param(selectModel("composer-2.5", {}, CATALOG, undefined), "fast")).toBe("true");
+    expect(param(selectModel("composer-2.5", { fast: false }, CATALOG, undefined), "fast")).toBe("false");
+    expect(selectModel("default", {}, CATALOG, undefined)).toEqual({ id: "default" });
   });
 
   test("a bare id runs the catalog's default effort; overrides win", () => {
-    const s = selectModel("claude-sonnet-5", CATALOG, undefined);
+    const s = selectModel("claude-sonnet-5", {}, CATALOG, undefined);
     expect([param(s, "effort"), param(s, "context")]).toEqual(["high", "300k"]);
-    const o = selectModel("claude-sonnet-5-low", CATALOG, undefined, {
+    const o = selectModel("claude-sonnet-5", { effort: "low" }, CATALOG, undefined, {
       ...DEFAULT_PREFERENCES,
       overrides: () => ({ thinking: "false" }),
     });
@@ -83,7 +86,7 @@ describe("models", () => {
   });
 
   test("legacy, config and unknown ids", () => {
-    expect(selectModel("gpt-5.5?reasoning=high&fast=true", CATALOG, undefined)).toEqual({
+    expect(selectModel("gpt-5.5?reasoning=high&fast=true", {}, CATALOG, undefined)).toEqual({
       id: "gpt-5.5",
       params: [
         { id: "reasoning", value: "high" },
@@ -91,23 +94,26 @@ describe("models", () => {
       ],
     });
     expect(
-      selectModel("mine-high", CATALOG, [{ id: "mine", efforts: ["high"], effortParam: "reasoning" }]),
+      selectModel("mine", { effort: "high" }, CATALOG, [
+        { id: "mine", efforts: ["high"], effortParam: "reasoning", fast: true },
+      ]),
     ).toEqual({
       id: "mine",
-      params: [{ id: "reasoning", value: "high" }],
+      params: [
+        { id: "reasoning", value: "high" },
+        { id: "fast", value: "false" },
+      ],
     });
-    expect(selectModel("someone-else-high", CATALOG, undefined)).toEqual({ id: "someone-else-high" });
-    expect(selectModel("claude-sonnet-5-high", undefined, undefined)).toEqual({ id: "claude-sonnet-5" });
-    expect(configEntries({ id: "mine", name: "Mine", efforts: ["low", "high"] }).map((m) => m.name)).toEqual([
-      "Mine (low)",
-      "Mine (high)",
-    ]);
+    expect(selectModel("someone-else", {}, CATALOG, undefined)).toEqual({ id: "someone-else" });
+    expect(selectModel("claude-sonnet-5-high", {}, undefined, undefined)).toEqual({
+      id: "claude-sonnet-5",
+    });
     expect(contextTokens("272k")).toBe(272_000);
     expect(contextTokens("1m")).toBe(1_000_000);
     expect(contextTokens("lots")).toBeUndefined();
   });
 
-  test("the lister prefers config, then the catalog, then the built-in list, plus custom models", async () => {
+  test("the lister prefers config, then the catalog, then the built-in list", async () => {
     let calls = 0;
     let list: ModelListItem[] | undefined;
     const errors: string[] = [];
@@ -119,22 +125,20 @@ describe("models", () => {
       },
       (e) => errors.push(e.message),
     );
-    const custom = () => [{ id: "my-model" }, { id: "composer-2.5" }];
-    const ids = async (cfg = {}) => (await modelLister(() => cfg, catalog, custom)()).map((m) => m.id);
-    expect(await ids()).toEqual([...DEFAULT_MODELS.map((m) => m.id), "my-model"]);
+    const ids = async (cfg = {}) => (await modelLister(() => cfg, catalog)()).map((m) => m.id);
+    expect(await ids()).toEqual(DEFAULT_MODELS.map((m) => m.id));
     expect(errors).toEqual(["no key"]);
     await ids();
     expect(calls).toBe(1);
     catalog.clear();
     list = CATALOG;
     const all = await ids();
-    expect(all.filter((id) => id.startsWith("claude-sonnet-5"))).toHaveLength(5);
-    expect(all.slice(-2)).toEqual(["default", "my-model"]);
-    expect(await ids({ models: [{ id: "only", efforts: ["low"] }] })).toEqual([
-      "only-low",
-      "my-model",
-      "composer-2.5",
-    ]);
+    expect(all.filter((id) => id.startsWith("claude-sonnet-5"))).toEqual(["claude-sonnet-5"]);
+    expect(all.at(-1)).toBe("default");
+    const info = (await modelLister(() => ({}), catalog)()).find((m) => m.id === "gpt-5.5");
+    expect(info?.efforts).toContain("xhigh");
+    expect(info?.fast).toBe(true);
+    expect(await ids({ models: [{ id: "only", efforts: ["low"] }] })).toEqual(["only"]);
   });
 });
 
