@@ -1,29 +1,36 @@
 import type { ModelListItem, ModelParameterDefinition, ModelSelection, ModelVariant } from "@cursor/sdk";
-import type { ModelInfo } from "@valethq/sdk";
+import type { ModelInfo, ModelOptions } from "@valethq/sdk";
 import {
   CATALOG_TTL_MS,
   type CursorConfig,
-  type CustomModel,
   DEFAULT_LIMITS,
   DEFAULT_MODELS,
+  EFFORTS,
+  type Effort,
   type ModelConfig,
 } from "./config";
 
 /** Cursor's name for a model's effort knob differs by vendor; the first one a model has is used. */
 export const EFFORT_PARAMS = ["effort", "reasoning_effort", "reasoning"] as const;
 
-/** The effort words valet's picker groups as "<family>-<effort>" (valet-ui `familyOf`). */
-const PICKER_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-const EFFORT_SUFFIX = new RegExp(`-(${PICKER_EFFORTS.join("|")})$`);
+const EFFORT_SUFFIX = new RegExp(`-(${EFFORTS.join("|")})$`);
 const WORDS: Record<string, string> = { "extra-high": "xhigh" };
 
 /** Picker word for a Cursor effort value: "extra-high" -> "xhigh"; the rest pass through. */
 export const effortWord = (value: string): string => WORDS[value] ?? value;
 
-/** Settings that pick a variant's non-effort params. */
+/** An effort valet's picker takes, or undefined for anything else. */
+export const asEffort = (v: string | undefined): Effort | undefined =>
+  v !== undefined && (EFFORTS as readonly string[]).includes(v) ? (v as Effort) : undefined;
+
+/** For the utility model setting, which may name an effort: "composer-2-high" -> { model, effort }. */
+export function resolveModel(id: string): { model: string; effort?: Effort } {
+  const effort = asEffort(EFFORT_SUFFIX.exec(id)?.[1]);
+  return effort ? { model: id.replace(EFFORT_SUFFIX, ""), effort } : { model: id };
+}
+
+/** Settings that pick a variant's non-effort, non-fast params. */
 export interface Preferences {
-  /** Cursor fast mode (`fast=true`) where a model has it. */
-  fast: boolean;
   /** Allow Max-mode variants, which carry the large context windows. */
   maxMode: boolean;
   /** Leave Cursor's Auto model out of the catalog list. It still runs when a session names it. */
@@ -33,7 +40,6 @@ export interface Preferences {
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  fast: false,
   maxMode: false,
   hideAuto: false,
   overrides: () => ({}),
@@ -59,6 +65,17 @@ export function contextTokens(value: string | undefined): number | undefined {
 
 const paramsOf = (v: ModelVariant) => new Map(v.params.map((p) => [p.id, p.value]));
 
+const defaultVariant = (item: ModelListItem): ModelVariant | undefined =>
+  item.variants?.find((v) => v.isDefault) ?? item.variants?.[0];
+
+const hasFastParam = (item: ModelListItem): boolean => item.parameters?.some((p) => p.id === "fast") ?? false;
+
+/** Fast mode on by default when the catalog's default variant has fast=true. */
+export function catalogFastByDefault(item: ModelListItem): boolean {
+  const d = defaultVariant(item);
+  return hasFastParam(item) && !!d && paramsOf(d).get("fast") === "true";
+}
+
 /**
  * The variant to run for an effort value: the effort and any per-model overrides must match, then fast
  * mode as set, then non-Max unless Max mode is on, then the largest context, then the catalog default.
@@ -66,21 +83,20 @@ const paramsOf = (v: ModelVariant) => new Map(v.params.map((p) => [p.id, p.value
 export function pickVariant(
   item: ModelListItem,
   effort: string | undefined,
-  prefs: Preferences = DEFAULT_PREFERENCES,
+  prefs: Preferences,
+  fast: boolean,
 ): ModelVariant | undefined {
   const variants = item.variants ?? [];
   const knob = effortParam(item)?.id;
   const overrides = Object.entries(prefs.overrides(item.id));
-  const defaults = paramsOf(
-    variants.find((v) => v.isDefault) ?? variants[0] ?? { params: [], displayName: "" },
-  );
-  const hasFast = item.parameters?.some((p) => p.id === "fast") ?? false;
+  const defaults = paramsOf(defaultVariant(item) ?? { params: [], displayName: "" });
+  const hasFast = hasFastParam(item);
   const score = (v: ModelVariant): number => {
     const p = paramsOf(v);
     let s = 0;
     if (knob && effort !== undefined && p.get(knob) === effort) s += 100_000;
     s += 10_000 * overrides.filter(([k, val]) => p.get(k) === val).length;
-    if (hasFast && p.get("fast") === String(prefs.fast)) s += 1_000;
+    if (hasFast && p.get("fast") === String(fast)) s += 1_000;
     if (!!v.isMaxMode === prefs.maxMode) s += 500;
     s += Math.min(400, Math.floor((contextTokens(p.get("context")) ?? 0) / 5_000));
     s += [...defaults].filter(([k, val]) => p.get(k) === val).length;
@@ -94,30 +110,27 @@ export function pickVariant(
 const selection = (id: string, v: ModelVariant | undefined): ModelSelection =>
   v?.params.length ? { id, params: v.params } : { id };
 
-/**
- * One picker row per catalog model, or one per effort as "<id>-<effort>" so valet's picker shows them as
- * one model with an effort menu. Fast, context and thinking come from the settings, not extra rows.
- */
-export function catalogEntries(item: ModelListItem, prefs: Preferences = DEFAULT_PREFERENCES): ModelConfig[] {
-  const knob = effortParam(item);
-  const windowOf = (effort?: string) => {
-    const v = pickVariant(item, effort, prefs);
-    return contextTokens(v && paramsOf(v).get("context"));
-  };
-  const entry = (id: string, name: string, effort?: string): ModelConfig => {
-    const contextWindow = windowOf(effort);
-    return { id, name, ...(contextWindow && { contextWindow }) };
-  };
-  if (!knob) return [entry(item.id, item.displayName)];
-  return knob.values.map((v) =>
-    entry(`${item.id}-${effortWord(v.value)}`, `${item.displayName} (${effortWord(v.value)})`, v.value),
-  );
+/** Resolve ModelOptions.fast against the catalog (or a config row): unset follows fastByDefault. */
+export function resolveFast(
+  options: ModelOptions,
+  item: ModelListItem | undefined,
+  declared: ModelConfig | undefined,
+): boolean {
+  if (options.fast !== undefined) return options.fast;
+  if (item) return catalogFastByDefault(item);
+  return declared?.fastByDefault ?? false;
 }
 
-/** Picker entries for a config model: one per declared effort, else the bare id. */
-export function configEntries(m: ModelConfig): ModelConfig[] {
-  if (!m.efforts?.length) return [m];
-  return m.efforts.map((e) => ({ ...m, id: `${m.id}-${e}`, name: `${m.name ?? m.id} (${e})` }));
+/** Cursor raw effort value for a picker word, or the catalog default when unset. */
+function rawEffort(item: ModelListItem, effort: string | undefined): string | undefined {
+  const knob = effortParam(item);
+  if (!knob) return undefined;
+  if (effort !== undefined) {
+    const hit = knob.values.find((v) => effortWord(v.value) === effort)?.value;
+    if (hit !== undefined) return hit;
+  }
+  const d = defaultVariant(item);
+  return d?.params.find((p) => p.id === knob.id)?.value;
 }
 
 /** Legacy picker ids from 0.1.0: "gpt-5.5?reasoning=high" -> { id, params } as written. */
@@ -128,35 +141,38 @@ function legacySelection(pickerId: string): ModelSelection {
 }
 
 /**
- * Turns a picker id into what Cursor runs. "<id>-<effort>" sets the model's effort param to that value; a bare
- * id runs the catalog default effort. Other params follow `prefs`. Unknown ids go to Cursor unchanged.
+ * Turns a model id + options into what Cursor runs. Effort and fast come from ModelOptions; other params
+ * follow `prefs` (Max mode, modelParams). Unknown ids go to Cursor unchanged.
  */
 export function selectModel(
-  pickerId: string,
+  modelId: string,
+  options: ModelOptions,
   items: ModelListItem[] | undefined,
   configModels: ModelConfig[] | undefined,
   prefs: Preferences = DEFAULT_PREFERENCES,
 ): ModelSelection {
-  if (pickerId.includes("?")) return legacySelection(pickerId);
-  const exact = items?.find((m) => m.id === pickerId);
-  if (exact) {
-    const knob = effortParam(exact)?.id;
-    const variants = exact.variants ?? [];
-    const fallback = variants.find((v) => v.isDefault) ?? variants[0];
-    const effort = knob ? fallback?.params.find((p) => p.id === knob)?.value : undefined;
-    return selection(exact.id, pickVariant(exact, effort, prefs));
+  if (modelId.includes("?")) return legacySelection(modelId);
+  const item = items?.find((m) => m.id === modelId);
+  if (item) {
+    const effort = rawEffort(item, options.effort);
+    const fast = resolveFast(options, item, undefined);
+    return selection(item.id, pickVariant(item, effort, prefs, fast));
   }
-  const suffix = EFFORT_SUFFIX.exec(pickerId);
-  if (!suffix) return { id: pickerId };
-  const base = pickerId.slice(0, suffix.index);
-  const word = suffix[1] as string;
-  const item = items?.find((m) => m.id === base);
-  const value = item && effortParam(item)?.values.find((v) => effortWord(v.value) === word)?.value;
-  if (item && value !== undefined) return selection(base, pickVariant(item, value, prefs));
-  const declared = configModels?.find((m) => m.id === base && m.efforts?.includes(word));
-  if (declared) return { id: base, params: [{ id: declared.effortParam ?? "effort", value: word }] };
-  // spec-gap: without the catalog the effort param name is unknown, so Cursor runs the model's default effort.
-  return item || !items ? { id: base } : { id: pickerId };
+  const declared = configModels?.find((m) => m.id === modelId);
+  if (declared) {
+    const params: { id: string; value: string }[] = [];
+    const effort = asEffort(options.effort) ?? declared.defaultEffort;
+    if (effort) params.push({ id: declared.effortParam ?? "effort", value: effort });
+    if (declared.fast) {
+      const fast = resolveFast(options, undefined, declared);
+      params.push({ id: "fast", value: String(fast) });
+    }
+    return params.length ? { id: modelId, params } : { id: modelId };
+  }
+  // Bare id with a trailing effort word and no catalog: strip the word so Cursor sees the base id.
+  const suffix = EFFORT_SUFFIX.exec(modelId);
+  if (suffix && !items) return { id: modelId.slice(0, suffix.index) };
+  return { id: modelId };
 }
 
 export function toModelInfo(m: ModelConfig): ModelInfo {
@@ -167,7 +183,34 @@ export function toModelInfo(m: ModelConfig): ModelInfo {
     maxOutputTokens: m.maxOutputTokens ?? DEFAULT_LIMITS.maxOutputTokens,
     input: ["text", "image"],
     reasoning: true,
+    ...(m.efforts?.length ? { efforts: m.efforts } : {}),
+    ...(m.defaultEffort ? { defaultEffort: m.defaultEffort } : {}),
+    ...(m.fast ? { fast: true } : {}),
+    ...(m.fast && m.fastByDefault ? { fastByDefault: true } : {}),
   };
+}
+
+/** One ModelInfo per catalog model: efforts and fast capability, never one row per variant. */
+export function fromCatalog(item: ModelListItem, prefs: Preferences = DEFAULT_PREFERENCES): ModelInfo {
+  const knob = effortParam(item);
+  const efforts = knob?.values
+    .map((v) => effortWord(v.value))
+    .filter((e): e is Effort => (EFFORTS as readonly string[]).includes(e));
+  const d = defaultVariant(item);
+  const defaultRaw = knob && d ? d.params.find((p) => p.id === knob.id)?.value : undefined;
+  const defaultEffort = defaultRaw !== undefined ? asEffort(effortWord(defaultRaw)) : undefined;
+  const hasFast = hasFastParam(item);
+  const fastByDefault = catalogFastByDefault(item);
+  const variant = pickVariant(item, defaultRaw, prefs, fastByDefault);
+  const contextWindow = contextTokens(variant && paramsOf(variant).get("context"));
+  return toModelInfo({
+    id: item.id,
+    name: item.displayName,
+    ...(contextWindow && { contextWindow }),
+    ...(efforts?.length ? { efforts } : {}),
+    ...(defaultEffort ? { defaultEffort } : {}),
+    ...(hasFast ? { fast: true, ...(fastByDefault ? { fastByDefault: true } : {}) } : {}),
+  });
 }
 
 export interface Catalog {
@@ -201,29 +244,18 @@ export function createCatalog(
   };
 }
 
-/** config.models wins, then Cursor's catalog, then the built-in list. Custom models are appended unless listed. */
+/** config.models wins, then Cursor's catalog, then the built-in list. Each model is listed once. */
 export function modelLister(
   cfg: () => CursorConfig | undefined,
   catalog: Catalog,
-  custom: () => CustomModel[] = () => [],
   prefs: () => Preferences = () => DEFAULT_PREFERENCES,
 ) {
   return async (): Promise<ModelInfo[]> => {
     const configured = cfg()?.models;
-    const items = configured ? undefined : await catalog.get();
-    const listed = (
-      configured?.flatMap(configEntries) ??
-      items
-        ?.filter((i) => !(prefs().hideAuto && i.id === AUTO_MODEL))
-        .flatMap((i) => catalogEntries(i, prefs())) ??
-      DEFAULT_MODELS
-    ).map(toModelInfo);
-    const seen = new Set(listed.map((m) => m.id));
-    return [
-      ...listed,
-      ...custom()
-        .filter((m) => !seen.has(m.id))
-        .map(toModelInfo),
-    ];
+    if (configured) return configured.map(toModelInfo);
+    const items = await catalog.get();
+    const p = prefs();
+    if (items) return items.filter((i) => !(p.hideAuto && i.id === AUTO_MODEL)).map((i) => fromCatalog(i, p));
+    return DEFAULT_MODELS.map(toModelInfo);
   };
 }

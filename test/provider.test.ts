@@ -116,18 +116,10 @@ describe("turns", () => {
     expect(events.at(-1)).toEqual({ type: "finish", reason: "error", error: "rate limited" });
   });
 
-  test("setModel applies to the next send, with variant params", async () => {
-    const { deps, sends } = fakeSdk(() => say("ok"));
-    const s = await open(fakeCtx({}, deps));
-    await s.setModel?.("gpt-5.5?reasoning=high");
-    await collect(s.prompt(input("hi"), ac()));
-    expect(sends[0]?.options.model).toEqual({ id: "gpt-5.5", params: [{ id: "reasoning", value: "high" }] });
-  });
-
-  test("picker efforts map onto the catalog model's effort param", async () => {
+  test("setModel options replace the previous set and apply to the next send", async () => {
     const { deps, agents, sends } = fakeSdk(() => say("ok"), { models: async () => CATALOG });
-    const s = await open(fakeCtx({}, deps), { model: "claude-sonnet-5-max" });
-    await s.setModel?.("gpt-5.5-xhigh");
+    const s = await open(fakeCtx({}, deps), { model: "claude-sonnet-5", effort: "max" });
+    await s.setModel?.("gpt-5.5", { effort: "xhigh", fast: false });
     await collect(s.prompt(input("hi"), ac()));
     expect(agents[0]?.options.model).toEqual({
       id: "gpt-5.5",
@@ -138,6 +130,20 @@ describe("turns", () => {
       ],
     });
     expect(sends[0]?.options.model).toEqual(agents[0]?.options.model as never);
+  });
+
+  test("open effort and fast options are sent on the first create", async () => {
+    const { deps, agents } = fakeSdk(() => say("ok"), { models: async () => CATALOG });
+    const s = await open(fakeCtx({}, deps), { model: "gpt-5.5", effort: "high", fast: true });
+    await collect(s.prompt(input("hi"), ac()));
+    expect(agents[0]?.options.model).toEqual({
+      id: "gpt-5.5",
+      params: [
+        { id: "context", value: "272k" },
+        { id: "reasoning", value: "high" },
+        { id: "fast", value: "true" },
+      ],
+    });
   });
 
   test("images are sent inline", async () => {

@@ -8,10 +8,11 @@ import type {
   SDKImage,
   ToolName,
 } from "@cursor/sdk";
-import type { AgentEvent, AgentSession, Logger, ModelContent, ToolSurface } from "@valethq/sdk";
+import type { AgentEvent, AgentSession, Logger, ModelContent, ModelOptions, ToolSurface } from "@valethq/sdk";
 import { EventQueue } from "./channel";
 import { type CursorConfig, DEFAULT_IDLE_CLOSE_MS, type Mode } from "./config";
 import { closeOpen, mapUpdate, newTurnState, type ToolInfo, type TurnState, toolInfo } from "./events";
+import { asEffort } from "./models";
 import type { SdkDeps } from "./sdk";
 import { customTools } from "./tools";
 
@@ -27,17 +28,20 @@ export interface SessionInit {
   id: string;
   cwd: string;
   model: string;
+  effort?: string;
+  /** Cursor fast mode; unset follows the model's fastByDefault. */
+  fast?: boolean;
   tools: ToolSurface;
   reseeded: boolean;
   /** The agent is already in Cursor's local store, so the first prompt resumes it instead of creating it. */
   existing: boolean;
   cfg(): CursorConfig;
-  /** Read at each agent start so the settings panel applies without a restart. */
+  /** Read at each agent start so a settings change applies without a restart. */
   flags(): SessionFlags;
   mode(): Mode;
   apiKey(): Promise<string | undefined>;
-  /** Picker id -> the model and params Cursor runs, read at each send so settings apply without a restart. */
-  select(pickerId: string): Promise<ModelSelection>;
+  /** Model id + options -> the model and params Cursor runs; prefs (Max mode, modelParams) are read each time. */
+  select(modelId: string, options: ModelOptions): Promise<ModelSelection>;
   /** Shown when there is no key and no `Cursor.auth.login()` credential, instead of the SDK's slow auth retries. */
   missingKey: string;
   log: Logger;
@@ -61,6 +65,8 @@ export class CursorSession implements AgentSession {
   /** Set after a resume: the first send expires a run a crashed valet left active. */
   private force = false;
   private model: string;
+  private effort?: string;
+  private fast?: boolean;
   private idle?: ReturnType<typeof setTimeout>;
   private lastContext?: number;
   /** A prompt cancelled before Cursor saved it; Cursor drops it, so the next prompt carries it. */
@@ -70,6 +76,8 @@ export class CursorSession implements AgentSession {
     this.reseeded = init.reseeded;
     this.existing = init.existing;
     this.model = init.model;
+    this.effort = asEffort(init.effort);
+    this.fast = init.fast;
   }
 
   get resumeId(): string {
@@ -83,7 +91,7 @@ export class CursorSession implements AgentSession {
     const tools = toolSet(cfg, flags);
     return {
       ...(key && { apiKey: key }),
-      model: await this.init.select(this.model),
+      model: await this.init.select(this.model, this.options()),
       local: {
         cwd: this.init.cwd,
         settingSources: cfg.settingSources ?? [],
@@ -126,8 +134,17 @@ export class CursorSession implements AgentSession {
     this.idle.unref?.();
   }
 
-  async setModel(next: string): Promise<void> {
-    this.model = next;
+  private options(): ModelOptions {
+    return {
+      ...(this.effort !== undefined && { effort: this.effort }),
+      ...(this.fast !== undefined && { fast: this.fast }),
+    };
+  }
+
+  async setModel(model: string, options: ModelOptions): Promise<void> {
+    this.model = model;
+    this.effort = asEffort(options.effort);
+    this.fast = options.fast;
   }
 
   async close(): Promise<void> {
@@ -221,7 +238,7 @@ export class CursorSession implements AgentSession {
     try {
       try {
         run = await agent.send(message, {
-          model: await this.init.select(this.model),
+          model: await this.init.select(this.model, this.options()),
           mode: this.init.mode(),
           onDelta,
           local: {

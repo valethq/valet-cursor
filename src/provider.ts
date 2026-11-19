@@ -4,16 +4,7 @@ import type { CursorConfig } from "./config";
 import { type Catalog, modelLister, selectModel } from "./models";
 import { isNotFound, realSdk, type SdkDeps } from "./sdk";
 import { CursorSession } from "./session";
-import {
-  apiKey,
-  autoReview,
-  customModels,
-  hideBuiltinTools,
-  mode,
-  preferences,
-  sandbox,
-  secretName,
-} from "./settings";
+import { apiKey, autoReview, hideBuiltinTools, mode, preferences, sandbox, secretName } from "./settings";
 import { createUtility } from "./utility";
 
 export const PROVIDER_KEY = "cursor";
@@ -24,8 +15,8 @@ export function createProvider(
   deps: SdkDeps = realSdk,
 ): { provider: AgentProvider; dispose(): Promise<void> } {
   const sessions = new Set<CursorSession>();
-  const select = async (id: string) =>
-    selectModel(id, await catalog.get(), ctx.config?.models, preferences(ctx));
+  const select = async (id: string, options: { effort?: string; fast?: boolean }) =>
+    selectModel(id, options, await catalog.get(), ctx.config?.models, preferences(ctx));
   /** Whether Cursor's local store still has the agent. Only a definite "not found" reseeds. */
   const known = (id: string, cwd: string) =>
     deps.resume(id, { local: { cwd } }).then(
@@ -35,8 +26,7 @@ export function createProvider(
       },
       (e) => !isNotFound(e),
     );
-  // `& { icon }` until @valethq/sdk 0.3.0 (ProviderBase.icon) is published.
-  const provider: AgentProvider & { readonly icon: string } = {
+  const provider: AgentProvider = {
     kind: "agent",
     id: PROVIDER_KEY,
     label: "Cursor",
@@ -44,7 +34,6 @@ export function createProvider(
     listModels: modelLister(
       () => ctx.config,
       catalog,
-      () => customModels(ctx),
       () => preferences(ctx),
     ),
     utility: createUtility(ctx, deps, select),
@@ -61,6 +50,8 @@ export function createProvider(
         id,
         cwd,
         model: opts.model,
+        effort: opts.effort,
+        fast: opts.fast,
         tools: opts.tools,
         reseeded: opts.resumeId !== undefined && id !== opts.resumeId,
         existing,
