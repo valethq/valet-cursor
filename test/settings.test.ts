@@ -56,10 +56,10 @@ describe("settings are config", () => {
 });
 
 describe("settings panel", () => {
-  test("a view-only panel: auth status and reload, no editable schema", async () => {
+  test("view-only panels: auth, plan usage, and reload, no editable schema", async () => {
     const { deps } = fakeSdk(() => say("x"));
     const { ctx, panel } = fakeCtx({}, deps);
-    let registered: SettingsPanel | undefined;
+    const registered: SettingsPanel[] = [];
     registerSettings(
       {
         ...ctx,
@@ -67,7 +67,7 @@ describe("settings panel", () => {
         scopes: {
           define() {},
           provide(_s: string, impl: SettingsPanel) {
-            registered = impl;
+            registered.push(impl);
             return { dispose() {} };
           },
         },
@@ -75,11 +75,14 @@ describe("settings panel", () => {
       deps,
       { get: async () => undefined, clear() {} },
     );
-    expect(registered?.schema).toBeUndefined();
-    expect(registered?.get).toBeUndefined();
-    expect(registered?.set).toBeUndefined();
+    expect(registered.map((p) => p.title)).toEqual(["Cursor", "Plan usage"]);
+    expect(
+      registered.every((p) => p.schema === undefined && p.get === undefined && p.set === undefined),
+    ).toBe(true);
+    expect(typeof registered[1]?.actions?.refresh).toBe("function");
     expect(panel().schema).toBeUndefined();
     expect(panel().refreshMs).toBe(15_000);
+    expect(panel().title).toBe("Cursor");
   });
 
   test("the view reports where the key comes from", async () => {

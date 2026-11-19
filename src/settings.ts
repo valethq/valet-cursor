@@ -2,6 +2,7 @@ import type { PluginContext, SettingsBlock } from "@valethq/sdk";
 import { type CursorConfig, DEFAULT_SECRET, DEFAULT_UTILITY_MODEL, MODES, type Mode } from "./config";
 import type { Catalog, Preferences } from "./models";
 import type { SdkDeps } from "./sdk";
+import { createUsage } from "./usage";
 
 type Ctx = PluginContext<CursorConfig>;
 
@@ -58,8 +59,9 @@ async function authBlocks(ctx: Ctx, deps: SdkDeps): Promise<SettingsBlock[]> {
   return [{ type: "badge", text: "No API key", tone: "critical" }, where];
 }
 
-/** Auth status and a reload action above the config form; settings themselves are config. */
+/** Auth status, plan usage, and a reload action above the config form; settings themselves are config. */
 export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): void {
+  const usage = createUsage(ctx, { key: () => apiKey(ctx) });
   ctx.scopes.define({ name: "settings", version: 1, cardinality: "many" });
   ctx.onConfigChange(() => {}); // every value is read from ctx.config when it is used
   ctx.scopes.provide(
@@ -81,5 +83,15 @@ export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): voi
       },
     },
     { key: "valet-cursor" },
+  );
+  ctx.scopes.provide(
+    "settings",
+    {
+      title: "Plan usage",
+      view: () => usage.view(),
+      refreshMs: 15_000,
+      actions: { refresh: () => usage.refresh(true) },
+    },
+    { key: "valet-cursor-usage" },
   );
 }

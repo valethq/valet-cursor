@@ -84,7 +84,11 @@ Settings are this plugin's config (valet-core 12.1): the UI edits them through c
 | `modelParams`      | Per-model Cursor params, e.g. `{ "claude-opus-4-8": { "thinking": "false" } }`. Wins over the picker.                                                  |
 | `models`           | Replace the model list (`id`, `name?`, `contextWindow?`, `maxOutputTokens?`, `efforts?`, `defaultEffort?`, `effortParam?`, `fast?`, `fastByDefault?`). |
 
-The settings panel above the form shows whether an API key or Cursor login was found, and a "Reload models" action. Fast mode is not a plugin setting: it is chosen per model selection.
+The settings page shows whether an API key or Cursor login was found, a Plan usage card, and a "Reload models" action. Fast mode is not a plugin setting: it is chosen per model selection.
+
+## Plan usage
+
+The Plan usage card (a view-only settings panel above the config form) shows the plan name, how much included usage is left, when that bucket resets, and on-demand spend. The numbers are Cursor's dashboard RPCs `GetPlanInfo`, `GetCurrentPeriodUsage`, and `GetHardLimit`, the same ones the Cursor CLI usage view calls. The plugin exchanges its API key (`POST /auth/exchange_user_api_key` on `https://api2.cursor.sh`, or `CURSOR_API_ENDPOINT`) for a short-lived access token and keeps that token in memory. A reading is reused for a minute. "Refresh now" forces a new read, at most once every 10 seconds. With no API key and no `Cursor.auth.login()` credential, the card says so instead of calling Cursor.
 
 ## Tests
 
