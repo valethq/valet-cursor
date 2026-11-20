@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { AgentProvider, AgentSession, PluginContext } from "@valethq/sdk";
-import type { CursorConfig } from "./config";
+import { type CursorConfig, DEFAULT_SECRET } from "./config";
 import { type Catalog, modelLister, selectModel } from "./models";
 import { isNotFound, realSdk, type SdkDeps } from "./sdk";
 import { CursorSession } from "./session";
-import { apiKey, autoReview, hideBuiltinTools, mode, preferences, sandbox, secretName } from "./settings";
+import { apiKey, autoReview, hideBuiltinTools, mode, preferences, sandbox } from "./settings";
 import { createUtility } from "./utility";
 
 export const PROVIDER_KEY = "cursor";
@@ -64,7 +64,7 @@ export function createProvider(
         mode: () => mode(ctx),
         apiKey: () => apiKey(ctx),
         select,
-        missingKey: `no Cursor API key: put one in ~/.valet/secrets/${secretName(ctx)} or ${secretName(ctx).toUpperCase()}`,
+        missingKey: `no Cursor API key: set one in Settings, or put one in ~/.valet/secrets/${DEFAULT_SECRET} or ${DEFAULT_SECRET.toUpperCase()}`,
         log: ctx.log,
         readBlob: (blobId) => Bun.file(ctx.store.blobs.path(blobId)).bytes(),
         onClose: () => {

@@ -26,8 +26,8 @@ export interface ModelConfig {
 }
 
 export interface CursorConfig {
-  /** Secret holding the Cursor API key: ~/.valet/secrets/<name>, then the env var <NAME>. Default "cursor_api_key". */
-  secret?: string;
+  /** The Cursor API key, resolved by core from its `${secret:...}` ref (default `${secret:cursor_api_key}`). */
+  apiKey?: string;
   /** Conversation mode for each send. Default "agent". */
   mode?: Mode;
   /** Built-in tools Cursor may never offer (SDK `disallowedTools`), e.g. ["shell"]. */

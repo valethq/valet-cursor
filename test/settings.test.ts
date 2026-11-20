@@ -1,7 +1,8 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: settings refs are written ${resolver:arg}
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { PluginContext, SettingsBlock, SettingsPanel } from "@valethq/sdk";
+import type { Display, PluginContext, Setting, SettingsContribution } from "@valethq/sdk";
 import type { CursorConfig } from "../src/config";
 import { hideAuto, hideBuiltinTools, maxMode, mode, registerSettings, utilityModel } from "../src/settings";
 import { CATALOG } from "./catalog";
@@ -16,13 +17,13 @@ function ctxWith(config: CursorConfig) {
 }
 
 const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "manifest.json"), "utf8"));
-const props = manifest.configSchema.properties as Record<string, { default?: unknown }>;
+const props: Record<string, { default?: unknown }> = {};
+for (const sub of manifest.settings.sections.inference.subsections)
+  for (const item of sub.items as Setting[]) if (item.input) props[item.id] = { default: item.input.default };
 
-const badge = async (h: ReturnType<typeof fakeCtx>) => {
-  const blocks = (await h.panel().view?.()) ?? [];
-  const row = blocks[0] as Extract<SettingsBlock, { type: "group" }>;
-  return row.blocks[0];
-};
+const account = async (h: ReturnType<typeof fakeCtx>): Promise<Display[]> =>
+  (await h.panel().subsections?.())?.find((s) => s.id === "account")?.items as Display[];
+const badge = async (h: ReturnType<typeof fakeCtx>) => (await account(h))[0];
 
 describe("settings are config", () => {
   test("accessors fall back to the same defaults the manifest declares", () => {
@@ -55,18 +56,19 @@ describe("settings are config", () => {
   });
 });
 
-describe("settings panel", () => {
-  test("view-only panels: auth, plan usage, and reload, no editable schema", async () => {
+describe("settings@2 contribution", () => {
+  test("account and plan usage are runtime subsections; reload and refresh are actions", async () => {
     const { deps } = fakeSdk(() => say("x"));
-    const { ctx, panel } = fakeCtx({}, deps);
-    const registered: SettingsPanel[] = [];
+    const registered: SettingsContribution[] = [];
+    const ctx = fakeCtx({}, deps).ctx;
     registerSettings(
       {
         ...ctx,
+        config: ctx.config,
         onConfigChange() {},
         scopes: {
           define() {},
-          provide(_s: string, impl: SettingsPanel) {
+          provide(_s: string, impl: SettingsContribution) {
             registered.push(impl);
             return { dispose() {} };
           },
@@ -75,14 +77,22 @@ describe("settings panel", () => {
       deps,
       { get: async () => undefined, clear() {} },
     );
-    expect(registered.map((p) => p.title)).toEqual(["Cursor", "Plan usage"]);
-    expect(
-      registered.every((p) => p.schema === undefined && p.get === undefined && p.set === undefined),
-    ).toBe(true);
-    expect(typeof registered[1]?.actions?.refresh).toBe("function");
-    expect(panel().schema).toBeUndefined();
-    expect(panel().refreshMs).toBe(15_000);
-    expect(panel().title).toBe("Cursor");
+    expect(registered).toHaveLength(1);
+    const subs = (await registered[0]?.subsections?.()) ?? [];
+    expect(subs.map((s) => [s.id, s.label, s.refreshMs])).toEqual([
+      ["account", "Account", 15_000],
+      ["usage", "Plan usage", 15_000],
+    ]);
+    expect(subs[0]?.items.at(-1)).toEqual({ type: "action", text: "Reload models", action: "reloadModels" });
+    expect(typeof registered[0]?.actions?.refresh).toBe("function");
+  });
+
+  test("the old secret name migrates to an apiKey ref", () => {
+    const apiKey = (manifest.settings.sections.inference.subsections as { items: Setting[] }[])
+      .flatMap((s) => s.items)
+      .find((s) => s.id === "apiKey");
+    expect(apiKey?.input).toEqual({ type: "secret", default: "${secret:cursor_api_key}" });
+    expect(apiKey?.migrate).toEqual([{ from: "secret", map: { template: "${secret:{}}" } }]);
   });
 
   test("the view reports where the key comes from", async () => {
