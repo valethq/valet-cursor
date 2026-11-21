@@ -6,149 +6,300 @@
   "description": "inference@1 agent provider cursor over the Cursor SDK.",
   "valet": "^0.1.0",
   "main": "./src/index.ts",
-  "provides": ["inference@1", "settings@1"],
-  "configSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "x-icon": "cursor",
-    "properties": {
-      "mode": {
-        "type": "string",
-        "title": "Mode",
-        "description": "Cursor conversation mode for each prompt.",
-        "enum": ["agent", "plan"],
-        "enumNames": ["Agent", "Plan"],
-        "default": "agent",
-        "x-section": "Behaviour"
-      },
-      "utilityModel": {
-        "type": "string",
-        "title": "Utility model",
-        "description": "Model for small side jobs such as naming sessions; may end in an effort (composer-2-high). Empty turns them off.",
-        "default": "composer-2",
-        "x-section": "Behaviour"
-      },
-      "hideAuto": {
-        "type": "boolean",
-        "title": "Hide Auto",
-        "description": "Leave Cursor's Auto model out of the picker. Sessions already on Auto keep using it.",
-        "default": false,
-        "x-section": "Behaviour"
-      },
-      "maxMode": {
-        "type": "boolean",
-        "title": "Max mode",
-        "description": "Allow Max-mode variants: the largest context windows, billed at Max-mode rates.",
-        "default": false,
-        "x-section": "Behaviour"
-      },
-      "hideBuiltinTools": {
-        "type": "boolean",
-        "title": "Hide built-in tools",
-        "description": "Remove Cursor's own tools (shell, read, edit, grep, ...) so only valet's tools are offered.",
-        "default": false,
-        "x-section": "Tools"
-      },
-      "autoReview": {
-        "type": "boolean",
-        "title": "Cursor Auto-review",
-        "description": "Let Cursor's classifier review local tool calls. Unset keeps the SDK default.",
-        "x-section": "Tools"
-      },
-      "sandbox": {
-        "type": "boolean",
-        "title": "Cursor sandbox",
-        "description": "Run Cursor's shell commands in its local sandbox. Unset keeps the SDK default.",
-        "x-section": "Tools"
-      },
-      "denyTools": {
-        "type": "array",
-        "items": { "type": "string" },
-        "title": "Denied tools",
-        "description": "Built-in tools Cursor may never offer, e.g. shell.",
-        "x-section": "Tools",
-        "x-advanced": true
-      },
-      "tools": {
-        "type": "array",
-        "items": { "type": "string" },
-        "title": "Built-in tool set",
-        "description": "The built-in tools offered. Unset keeps Cursor's defaults; \"mcp\" is always kept so valet's tools stay.",
-        "x-section": "Tools",
-        "x-advanced": true
-      },
-      "secret": {
-        "type": "string",
-        "title": "API key secret",
-        "description": "Secret name for the Cursor API key (~/.valet/secrets/<name>, then <NAME>).",
-        "default": "cursor_api_key",
-        "x-widget": "secret",
-        "x-advanced": true
-      },
-      "settingSources": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "enum": ["project", "user", "team", "mdm", "plugins", "all"]
-        },
-        "title": "Settings files to load",
-        "description": "Cursor settings layers to load. None by default: valet supplies the persona and AGENTS.md.",
-        "x-advanced": true
-      },
-      "idleCloseMs": {
-        "type": "number",
-        "title": "Close idle sessions after (ms)",
-        "description": "The next prompt resumes the session. 0 keeps them open.",
-        "minimum": 0,
-        "default": 900000,
-        "x-advanced": true
-      },
-      "modelParams": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        },
-        "title": "Per-model params",
-        "description": "Cursor params pinned per model id, e.g. { \"claude-opus-4-8\": { \"thinking\": \"false\" } }. Wins over the picker.",
-        "x-advanced": true
-      },
-      "models": {
-        "type": "array",
-        "title": "Model list",
-        "description": "Replaces Cursor's catalog. Rename or hide models on the Models page instead.",
-        "x-advanced": true,
-        "items": {
-          "type": "object",
-          "required": ["id"],
-          "additionalProperties": false,
-          "properties": {
-            "id": { "type": "string", "title": "Model id" },
-            "name": { "type": "string", "title": "Name" },
-            "contextWindow": { "type": "number", "title": "Context window" },
-            "maxOutputTokens": { "type": "number", "title": "Max output" },
-            "efforts": {
-              "type": "array",
-              "title": "Efforts",
-              "items": {
-                "type": "string",
-                "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+  "provides": ["inference@1", "settings@2"],
+  "settings": {
+    "sections": {
+      "inference": {
+        "subsections": [
+          {
+            "id": "connection",
+            "label": "Connection",
+            "items": [
+              {
+                "id": "apiKey",
+                "label": "API key",
+                "summary": "Stored as a valet secret. Without one, Cursor uses CURSOR_API_KEY or its own login.",
+                "input": {
+                  "type": "secret",
+                  "default": "${secret:cursor_api_key}"
+                },
+                "migrate": [
+                  {
+                    "from": "secret",
+                    "map": {
+                      "template": "${secret:{}}"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "settingSources",
+                "label": "Settings files to load",
+                "summary": "Cursor settings layers to load. None by default: valet supplies the persona and AGENTS.md.",
+                "input": {
+                  "type": "multiselect",
+                  "options": [
+                    {
+                      "value": "project"
+                    },
+                    {
+                      "value": "user"
+                    },
+                    {
+                      "value": "team"
+                    },
+                    {
+                      "value": "mdm"
+                    },
+                    {
+                      "value": "plugins"
+                    },
+                    {
+                      "value": "all"
+                    }
+                  ]
+                },
+                "advanced": true
+              },
+              {
+                "id": "idleCloseMs",
+                "label": "Close idle sessions after (ms)",
+                "summary": "The next prompt resumes the session. 0 keeps them open.",
+                "input": {
+                  "type": "duration",
+                  "min": 0,
+                  "default": 900000
+                },
+                "advanced": true
+              },
+              {
+                "id": "modelParams",
+                "label": "Per-model params",
+                "summary": "Cursor params pinned per model id, e.g. { \"claude-opus-4-8\": { \"thinking\": \"false\" } }. Wins over the picker.",
+                "input": {
+                  "type": "map",
+                  "value": {
+                    "type": "map",
+                    "value": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "advanced": true
+              },
+              {
+                "id": "models",
+                "label": "Model list",
+                "summary": "Replaces Cursor's catalog. Rename or hide models on the Models page instead.",
+                "input": {
+                  "type": "list",
+                  "item": {
+                    "type": "group",
+                    "inputs": [
+                      {
+                        "id": "id",
+                        "type": "string",
+                        "label": "Model id",
+                        "required": true
+                      },
+                      {
+                        "id": "name",
+                        "type": "string",
+                        "label": "Name"
+                      },
+                      {
+                        "id": "contextWindow",
+                        "type": "number",
+                        "label": "Context window"
+                      },
+                      {
+                        "id": "maxOutputTokens",
+                        "type": "number",
+                        "label": "Max output"
+                      },
+                      {
+                        "id": "efforts",
+                        "type": "multiselect",
+                        "options": [
+                          {
+                            "value": "none"
+                          },
+                          {
+                            "value": "minimal"
+                          },
+                          {
+                            "value": "low"
+                          },
+                          {
+                            "value": "medium"
+                          },
+                          {
+                            "value": "high"
+                          },
+                          {
+                            "value": "xhigh"
+                          },
+                          {
+                            "value": "max"
+                          }
+                        ],
+                        "label": "Efforts"
+                      },
+                      {
+                        "id": "defaultEffort",
+                        "type": "select",
+                        "options": [
+                          {
+                            "value": "none"
+                          },
+                          {
+                            "value": "minimal"
+                          },
+                          {
+                            "value": "low"
+                          },
+                          {
+                            "value": "medium"
+                          },
+                          {
+                            "value": "high"
+                          },
+                          {
+                            "value": "xhigh"
+                          },
+                          {
+                            "value": "max"
+                          }
+                        ],
+                        "label": "Default effort"
+                      },
+                      {
+                        "id": "effortParam",
+                        "type": "string",
+                        "label": "Effort param",
+                        "summary": "Cursor param name when the catalog does not know the model. Default effort."
+                      },
+                      {
+                        "id": "fast",
+                        "type": "bool",
+                        "label": "Fast mode"
+                      },
+                      {
+                        "id": "fastByDefault",
+                        "type": "bool",
+                        "label": "Fast by default"
+                      }
+                    ]
+                  }
+                },
+                "advanced": true
               }
-            },
-            "defaultEffort": {
-              "type": "string",
-              "title": "Default effort",
-              "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
-            },
-            "effortParam": {
-              "type": "string",
-              "title": "Effort param",
-              "description": "Cursor param name when the catalog does not know the model. Default effort."
-            },
-            "fast": { "type": "boolean", "title": "Fast mode" },
-            "fastByDefault": { "type": "boolean", "title": "Fast by default" }
+            ]
+          },
+          {
+            "id": "behaviour",
+            "label": "Behaviour",
+            "items": [
+              {
+                "id": "mode",
+                "label": "Mode",
+                "summary": "Cursor conversation mode for each prompt.",
+                "input": {
+                  "type": "select",
+                  "options": [
+                    {
+                      "value": "agent",
+                      "label": "Agent"
+                    },
+                    {
+                      "value": "plan",
+                      "label": "Plan"
+                    }
+                  ],
+                  "default": "agent"
+                }
+              },
+              {
+                "id": "utilityModel",
+                "label": "Utility model",
+                "summary": "Model for small side jobs such as naming sessions; may end in an effort (composer-2-high). Empty turns them off.",
+                "input": {
+                  "type": "string",
+                  "default": "composer-2",
+                  "placeholder": "Off"
+                }
+              },
+              {
+                "id": "hideAuto",
+                "label": "Hide Auto",
+                "summary": "Leave Cursor's Auto model out of the picker. Sessions already on Auto keep using it.",
+                "input": {
+                  "type": "bool",
+                  "default": false
+                }
+              },
+              {
+                "id": "maxMode",
+                "label": "Max mode",
+                "summary": "Allow Max-mode variants: the largest context windows, billed at Max-mode rates.",
+                "input": {
+                  "type": "bool",
+                  "default": false
+                }
+              }
+            ]
+          },
+          {
+            "id": "tools",
+            "label": "Tools",
+            "items": [
+              {
+                "id": "hideBuiltinTools",
+                "label": "Hide built-in tools",
+                "summary": "Remove Cursor's own tools (shell, read, edit, grep, ...) so only valet's tools are offered.",
+                "input": {
+                  "type": "bool",
+                  "default": false
+                }
+              },
+              {
+                "id": "autoReview",
+                "label": "Cursor Auto-review",
+                "summary": "Let Cursor's classifier review local tool calls. Unset keeps the SDK default.",
+                "input": {
+                  "type": "bool"
+                }
+              },
+              {
+                "id": "sandbox",
+                "label": "Cursor sandbox",
+                "summary": "Run Cursor's shell commands in its local sandbox. Unset keeps the SDK default.",
+                "input": {
+                  "type": "bool"
+                }
+              },
+              {
+                "id": "denyTools",
+                "label": "Denied tools",
+                "summary": "Built-in tools Cursor may never offer, e.g. shell.",
+                "input": {
+                  "type": "tags"
+                },
+                "advanced": true
+              },
+              {
+                "id": "tools",
+                "label": "Built-in tool set",
+                "summary": "The built-in tools offered. Unset keeps Cursor's defaults; \"mcp\" is always kept so valet's tools stay.",
+                "input": {
+                  "type": "tags"
+                },
+                "advanced": true
+              }
+            ]
           }
-        }
+        ],
+        "icon": "cursor"
       }
     }
   }

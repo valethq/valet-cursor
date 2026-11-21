@@ -158,19 +158,12 @@ describe("includedMeter", () => {
 });
 
 describe("usageBlocks", () => {
-  test("plan, included meter, on-demand, then the update time and a refresh button", () => {
+  test("plan, included meter, on-demand, then the update time and a refresh action", () => {
     const blocks = usageBlocks({ snapshot: parseUsage(premium()), at: NOW }, NOW);
-    expect(blocks).toHaveLength(2);
-    const [usage, footer] = blocks as unknown as [
-      { type: string; title: string; blocks: { type: string; text?: string; label?: string }[] },
-      { layout: string; blocks: { type: string }[] },
-    ];
-    expect(usage.title).toBe("Plan usage");
-    expect(usage.blocks.map((b) => b.type)).toEqual(["badge", "meter", "stat"]);
-    expect(usage.blocks[0]?.text).toBe("Premium");
-    expect(usage.blocks[2]).toMatchObject({ label: "On-demand", value: "$0", caption: "No monthly limit" });
-    expect(footer.layout).toBe("row");
-    expect(footer.blocks.map((b) => b.type)).toEqual(["text", "button"]);
+    expect(blocks.map((b) => b.type)).toEqual(["badge", "meter", "stat", "note", "action"]);
+    expect(blocks[0]).toMatchObject({ text: "Premium" });
+    expect(blocks[2]).toMatchObject({ label: "On-demand", value: "$0", caption: "No monthly limit" });
+    expect(blocks[4]).toEqual({ type: "action", text: "Refresh now", action: "refresh" });
   });
 
   test("auto and api rows appear only when they differ from the included total", () => {
@@ -178,31 +171,34 @@ describe("usageBlocks", () => {
     raw.period.planUsage.autoPercentUsed = 10;
     (raw.period.planUsage as { apiPercentUsed?: number }).apiPercentUsed = 40;
     const blocks = usageBlocks({ snapshot: parseUsage(raw), at: NOW }, NOW);
-    const group = blocks[0] as { blocks: { label?: string }[] };
-    expect(group.blocks.map((b) => b.label)).toEqual([undefined, "Included", "Auto", "API", "On-demand"]);
+    expect(blocks.filter((b) => b.type === "meter").map((b) => (b as { label?: string }).label)).toEqual([
+      "Included",
+      "Auto",
+      "API",
+    ]);
   });
 
   test("before the first reading, and when it failed", () => {
-    expect(usageBlocks({}, NOW)).toEqual([{ type: "text", text: "Reading usage...", tone: "normal" }]);
+    expect(usageBlocks({}, NOW)).toEqual([{ type: "note", text: "Reading usage...", tone: "normal" }]);
     const failed = usageBlocks({ error: "boom" }, NOW);
-    expect(failed[0]).toEqual({ type: "text", text: "Could not read usage: boom", tone: "warning" });
-    expect(failed[1]).toMatchObject({ type: "group" });
+    expect(failed[0]).toEqual({ type: "note", text: "Could not read usage: boom", tone: "warning" });
+    expect(failed[1]).toMatchObject({ type: "action" });
   });
 
   test("a failed refresh keeps the last readings and says so", () => {
     const blocks = usageBlocks({ snapshot: parseUsage(premium()), at: NOW, error: "boom" }, NOW);
-    expect(blocks.map((b) => b.type)).toEqual(["group", "text", "group"]);
+    expect(blocks.map((b) => b.type)).toEqual(["badge", "meter", "stat", "note", "note", "action"]);
   });
 
   test("no login, and a plan without included usage, say why and offer no meters", () => {
     const none = usageBlocks({ snapshot: { available: false }, at: NOW }, NOW);
     expect(none[0]).toEqual({
-      type: "text",
+      type: "note",
       text: "Plan usage needs a Cursor API key or a Cursor login.",
     });
     const plan = usageBlocks({ snapshot: parseUsage({ plan: premium().plan, period: {} }), at: NOW }, NOW);
     expect(plan[0]).toEqual({
-      type: "text",
+      type: "note",
       text: "Included usage is not available for the Premium plan.",
     });
     expect(JSON.stringify(none)).not.toContain('"meter"');
@@ -323,7 +319,8 @@ describe("createUsage", () => {
     const { service, calls } = setup(ok(), { secret: "" });
     expect(await service.view()).toMatchObject([
       { text: "Plan usage needs a Cursor API key or a Cursor login." },
-      {},
+      { type: "note" },
+      { type: "action" },
     ]);
     expect(calls).toHaveLength(0);
   });

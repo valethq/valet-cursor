@@ -1,4 +1,10 @@
-import type { AgentEvent, AgentProvider, PluginContext, SettingsPanel, ToolSurface } from "@valethq/sdk";
+import type {
+  AgentEvent,
+  AgentProvider,
+  PluginContext,
+  SettingsContribution,
+  ToolSurface,
+} from "@valethq/sdk";
 import type { CursorConfig } from "../src/config";
 import { createCatalog } from "../src/models";
 import { createProvider } from "../src/provider";
@@ -12,11 +18,13 @@ export function fakeCtx(
 ) {
   const state: Record<string, unknown> = {};
   const kv = new Map<string, unknown>();
-  const panels: SettingsPanel[] = [];
+  const panels: SettingsContribution[] = [];
   const logs: { level: string; msg: string; data?: Record<string, unknown> }[] = [];
   const logger = (level: string) => (msg: string, data?: Record<string, unknown>) =>
     logs.push({ level, msg, data });
-  let current = config;
+  // Core resolves the apiKey ref; `secrets` stands in for what ${secret:cursor_api_key} would give.
+  const key = (opts.secrets ?? { cursor_api_key: "test-key" }).cursor_api_key;
+  let current: CursorConfig = { ...(key === undefined ? {} : { apiKey: key }), ...config };
   const ctx = {
     get config() {
       return current;
@@ -30,7 +38,7 @@ export function fakeCtx(
     scopes: {
       define: () => undefined,
       provide: (scope: string, value: unknown) => {
-        if (scope === "settings") panels.push(value as SettingsPanel);
+        if (scope === "settings") panels.push(value as SettingsContribution);
         return { dispose() {} };
       },
     },
@@ -77,7 +85,7 @@ export function fakeCtx(
     dispose,
     ctx,
     setConfig,
-    panel: () => panels[0] as SettingsPanel,
+    panel: () => panels[0] as SettingsContribution,
   };
 }
 

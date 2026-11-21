@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { PluginContext, SettingsBlock, SettingsTone } from "@valethq/sdk";
+import type { PluginContext, Display, SettingsTone } from "@valethq/sdk";
 import type { CursorConfig } from "./config";
 
 /** Pace within this many points of an even burn-down counts as "on pace". */
@@ -155,7 +155,7 @@ const money = (n: number): string => {
 };
 
 /** The bar shows what is left; the marker is where an even burn-down would be. */
-export function includedMeter(u: IncludedUsage, now: number): SettingsBlock {
+export function includedMeter(u: IncludedUsage, now: number): Display {
   const used = Math.round(Math.min(100, Math.max(0, u.percent)));
   const left = 100 - used;
   const remaining = u.resetsAt === undefined ? 0 : Math.max(0, u.resetsAt - now);
@@ -185,7 +185,7 @@ export function includedMeter(u: IncludedUsage, now: number): SettingsBlock {
   };
 }
 
-function bucketMeter(label: string, percent: number): SettingsBlock {
+function bucketMeter(label: string, percent: number): Display {
   const used = Math.round(Math.min(100, Math.max(0, percent)));
   return {
     type: "meter",
@@ -196,7 +196,7 @@ function bucketMeter(label: string, percent: number): SettingsBlock {
   };
 }
 
-export function onDemandBlock(o: OnDemand): SettingsBlock {
+export function onDemandBlock(o: OnDemand): Display {
   if (o.kind === "fixed") {
     const usedPct = o.limitDollars > 0 ? Math.min(100, (o.usedDollars / o.limitDollars) * 100) : 100;
     const left = Math.max(0, o.limitDollars - o.usedDollars);
@@ -241,18 +241,18 @@ export interface UsageState {
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-export function usageBlocks(s: UsageState, now = Date.now()): SettingsBlock[] {
-  const out: SettingsBlock[] = [];
+export function usageBlocks(s: UsageState, now = Date.now()): Display[] {
+  const out: Display[] = [];
   const snap = s.snapshot;
   if (!snap) {
     out.push({
-      type: "text",
+      type: "note",
       text: s.error ? `Could not read usage: ${s.error}` : "Reading usage...",
       tone: s.error ? "warning" : "normal",
     });
   } else if (!snap.available) {
     out.push({
-      type: "text",
+      type: "note",
       text: snap.unsupported
         ? snap.plan
           ? `Included usage is not available for the ${capitalize(snap.plan)} plan.`
@@ -261,7 +261,7 @@ export function usageBlocks(s: UsageState, now = Date.now()): SettingsBlock[] {
     });
   } else {
     const inc = snap.included;
-    const blocks: SettingsBlock[] = [
+    const blocks: Display[] = [
       ...(snap.plan ? [{ type: "badge" as const, text: capitalize(snap.plan) }] : []),
       ...(inc ? [includedMeter(inc, now)] : []),
     ];
@@ -269,23 +269,20 @@ export function usageBlocks(s: UsageState, now = Date.now()): SettingsBlock[] {
       blocks.push(bucketMeter("Auto", inc.autoPercent));
     if (inc?.apiPercent !== undefined && inc.apiPercent > 0) blocks.push(bucketMeter("API", inc.apiPercent));
     if (snap.onDemand) blocks.push(onDemandBlock(snap.onDemand));
-    out.push({ type: "group", title: "Plan usage", blocks });
-    if (s.error) out.push({ type: "text", text: `Could not refresh usage: ${s.error}`, tone: "warning" });
+    out.push(...blocks);
+    if (s.error) out.push({ type: "note", text: `Could not refresh usage: ${s.error}`, tone: "warning" });
   }
   if (snap || s.error)
-    out.push({
-      type: "group",
-      layout: "row",
-      blocks: [
-        ...(s.at === undefined ? [] : [{ type: "text" as const, text: `Updated ${clock(s.at)}` }]),
-        { type: "button", label: "Refresh now", action: "refresh" },
-      ],
+    out.push(...(s.at === undefined ? [] : [{ type: "note" as const, text: `Updated ${clock(s.at)}` }]), {
+      type: "action",
+      text: "Refresh now",
+      action: "refresh",
     });
   return out;
 }
 
 export interface UsageService {
-  view(): Promise<SettingsBlock[]>;
+  view(): Promise<Display[]>;
   refresh(force?: boolean): Promise<void>;
 }
 

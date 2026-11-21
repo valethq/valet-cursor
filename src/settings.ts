@@ -1,4 +1,4 @@
-import type { PluginContext, SettingsBlock } from "@valethq/sdk";
+import type { Display, PluginContext, RuntimeSubsection } from "@valethq/sdk";
 import { type CursorConfig, DEFAULT_SECRET, DEFAULT_UTILITY_MODEL, MODES, type Mode } from "./config";
 import type { Catalog, Preferences } from "./models";
 import type { SdkDeps } from "./sdk";
@@ -8,11 +8,9 @@ type Ctx = PluginContext<CursorConfig>;
 
 // Settings are config (12.1): core fills in the manifest's defaults, so these fallbacks only matter without it.
 
-export const secretName = (ctx: Ctx): string => ctx.config?.secret?.trim() || DEFAULT_SECRET;
-
-/** The key from valet's secrets. Undefined lets the SDK fall back to CURSOR_API_KEY and `Cursor.auth.login()`. */
+/** The key from the apiKey setting. Undefined lets the SDK fall back to CURSOR_API_KEY and `Cursor.auth.login()`. */
 export async function apiKey(ctx: Ctx): Promise<string | undefined> {
-  return (await ctx.secrets.get(secretName(ctx)))?.trim() || undefined;
+  return ctx.config?.apiKey?.trim() || undefined;
 }
 
 export function mode(ctx: Ctx): Mode {
@@ -46,52 +44,41 @@ export const preferences = (ctx: Ctx): Preferences => ({
   overrides: (id) => ctx.config?.modelParams?.[id] ?? {},
 });
 
-async function authBlocks(ctx: Ctx, deps: SdkDeps): Promise<SettingsBlock[]> {
-  const name = secretName(ctx);
-  const where: SettingsBlock = { type: "text", text: `~/.valet/secrets/${name} or ${name.toUpperCase()}` };
-  if (await apiKey(ctx)) return [{ type: "badge", text: "API key found", tone: "good" }, where];
+async function authItems(ctx: Ctx, deps: SdkDeps): Promise<Display[]> {
+  if (await apiKey(ctx)) return [{ type: "badge", text: "API key found", tone: "good" }];
   const status = await deps.authStatus().catch(() => ({ status: "logged-out" as const }));
   if (status.status === "logged-in")
     return [
       { type: "badge", text: status.email ? `Cursor login: ${status.email}` : "Cursor login", tone: "good" },
-      where,
     ];
-  return [{ type: "badge", text: "No API key", tone: "critical" }, where];
+  return [
+    { type: "badge", text: "No API key", tone: "critical" },
+    { type: "note", text: `Set the API key above, or put one in ~/.valet/secrets/${DEFAULT_SECRET}.` },
+  ];
 }
 
-/** Auth status, plan usage, and a reload action above the config form; settings themselves are config. */
+/** Auth status with a reload action, and live plan usage, as runtime subsections (settings@2). */
 export function registerSettings(ctx: Ctx, deps: SdkDeps, catalog: Catalog): void {
   const usage = createUsage(ctx, { key: () => apiKey(ctx) });
-  ctx.scopes.define({ name: "settings", version: 1, cardinality: "many" });
+  ctx.scopes.define({ name: "settings", version: 2, cardinality: "many" });
   ctx.onConfigChange(() => {}); // every value is read from ctx.config when it is used
-  ctx.scopes.provide(
-    "settings",
-    {
-      title: "Cursor",
-      description: "The API key is a secret file, not a setting.",
-      view: async () => [
-        { type: "group", layout: "row", blocks: await authBlocks(ctx, deps) },
-        {
-          type: "group",
-          layout: "row",
-          blocks: [{ type: "button", label: "Reload models", action: "reloadModels" }],
-        },
-      ],
-      refreshMs: 15_000,
-      actions: {
-        reloadModels: () => catalog.clear(),
+  ctx.scopes.provide("settings", {
+    actions: {
+      reloadModels: () => catalog.clear(),
+      refresh: () => usage.refresh(true),
+    },
+    subsections: async (): Promise<RuntimeSubsection[]> => [
+      {
+        id: "account",
+        label: "Account",
+        order: -1,
+        refreshMs: 15_000,
+        items: [
+          ...(await authItems(ctx, deps)),
+          { type: "action", text: "Reload models", action: "reloadModels" },
+        ],
       },
-    },
-    { key: "valet-cursor" },
-  );
-  ctx.scopes.provide(
-    "settings",
-    {
-      title: "Plan usage",
-      view: () => usage.view(),
-      refreshMs: 15_000,
-      actions: { refresh: () => usage.refresh(true) },
-    },
-    { key: "valet-cursor-usage" },
-  );
+      { id: "usage", label: "Plan usage", order: -1, refreshMs: 15_000, items: await usage.view() },
+    ],
+  });
 }

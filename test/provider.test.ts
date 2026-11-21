@@ -89,7 +89,8 @@ describe("turns", () => {
       {
         type: "finish",
         reason: "error",
-        error: "no Cursor API key: put one in ~/.valet/secrets/cursor_api_key or CURSOR_API_KEY",
+        error:
+          "no Cursor API key: set one in Settings, or put one in ~/.valet/secrets/cursor_api_key or CURSOR_API_KEY",
       },
     ]);
     expect(agents.length).toBe(0);
